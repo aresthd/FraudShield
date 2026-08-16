@@ -1,0 +1,144 @@
+transaction_types:
+    - TRANSFER
+    - QRIS_PAYMENT
+    - DEBIT
+    - CREDIT
+    - BILL_PAYMENT
+    - ONLINE_PURCHASE
+
+
+channels:
+    TRANSFER:
+        - MOBILE
+        - INTERNET_BANKING
+        - ATM
+    QRIS_PAYMENT:
+        - MOBILE
+    DEBIT:
+        - ATM
+        - POS
+    CREDIT:
+        - BRANCH
+        - MOBILE
+        - INTERNET_BANKING
+    BILL_PAYMENT:
+        - MOBILE
+        - INTERNET_BANKING
+    ONLINE_PURCHASE:
+        - MOBILE
+        - INTERNET_BANKING
+
+
+payment_methods:
+    TRANSFER:
+        - MOBILE_BANKING
+        - INTERNET_BANKING
+        - ATM
+    QRIS_PAYMENT:
+        - QRIS
+    DEBIT:
+        - DEBIT_CARD
+    CREDIT:
+        - BANK_TRANSFER
+        - CASH_DEPOSIT
+    BILL_PAYMENT:
+        - MOBILE_BANKING
+        - INTERNET_BANKING
+    ONLINE_PURCHASE:
+        - DEBIT_CARD
+        - VIRTUAL_ACCOUNT
+        - MOBILE_BANKING
+
+
+cities:
+    Jakarta:
+        country: Indonesia
+        latitude: -6.200000
+        longitude: 106.816666
+
+    Bandung:
+        country: Indonesia
+        latitude: -6.917464
+        longitude: 107.619123
+
+    Semarang:
+        country: Indonesia
+        latitude: -6.966667
+        longitude: 110.416664
+
+    Yogyakarta:
+        country: Indonesia
+        latitude: -7.797068
+        longitude: 110.370529
+
+    Surabaya:
+        country: Indonesia
+        latitude: -7.250445
+        longitude: 112.768845
+
+    Malang:
+        country: Indonesia
+        latitude: -7.983908
+        longitude: 112.621391
+
+    Medan:
+        country: Indonesia
+        latitude: 3.589665
+        longitude: 98.673828
+
+    Denpasar:
+        country: Indonesia
+        latitude: -8.650000
+        longitude: 115.216667
+
+    Makassar:
+        country: Indonesia
+        latitude: -5.147665
+        longitude: 119.432732
+
+    Singapore:
+        country: Singapore
+        latitude: 1.352083
+        longitude: 103.819836
+
+
+merchants:
+    - merchant_id: MER-00001
+      merchant_name: Tokopedia
+      merchant_category: E_COMMERCE
+
+    - merchant_id: MER-00002
+      merchant_name: Shopee
+      merchant_category: E_COMMERCE
+
+    - merchant_id: MER-00003
+      merchant_name: Bukalapak
+      merchant_category: E_COMMERCE
+
+    - merchant_id: MER-00004
+      merchant_name: Gojek
+      merchant_category: TRANSPORTATION
+
+    - merchant_id: MER-00005
+      merchant_name: Grab
+      merchant_category: TRANSPORTATION
+
+    - merchant_id: MER-00006
+      merchant_name: Indomaret
+      merchant_category: RETAIL
+
+    - merchant_id: MER-00007
+      merchant_name: Alfamart
+      merchant_category: RETAIL
+
+    - merchant_id: MER-00008
+      merchant_name: PLN
+      merchant_category: UTILITIES
+
+    - merchant_id: MER-00009
+      merchant_name: Telkomsel
+      merchant_category: TELECOMMUNICATION
+
+    - merchant_id: MER-00010
+      merchant_name: Netflix
+      merchant_category: DIGITAL_SERVICE

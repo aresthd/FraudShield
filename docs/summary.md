@@ -61,7 +61,7 @@ Target utama project ini adalah menunjukkan bagaimana sebuah sistem streaming da
                     ┌──────────────────────┐
                     │ Kafka                │
                     │                      │
-                    │ transactions.raw     │
+                    │ transactions_raw     │
                     └──────────┬───────────┘
                                 │
                                 │
@@ -84,7 +84,7 @@ Target utama project ini adalah menunjukkan bagaimana sebuah sistem streaming da
                                 ▼
                 ┌──────────────────────────────┐
                 │ Kafka                        │
-                │ transactions.enriched        │
+                │ transactions_enriched        │
                 └──────────────┬───────────────┘
                                 │
                         CG: fraud-engine
@@ -106,7 +106,7 @@ Target utama project ini adalah menunjukkan bagaimana sebuah sistem streaming da
                 ┌─────────────┴──────────────┐
                 │                            │
                 ▼                            ▼
-    transactions.analyzed               fraud.alerts
+    transactions.analyzed               fraud_alerts
                 │                            │
                 │                            │
         CG: fraud-sink              CG: fraud-alert
@@ -122,7 +122,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
              Rule Management Service
                        │
                        ▼
-              Kafka: fraud.rules
+              Kafka: fraud_rules
                        │
                        │
                CG: fraud-rules
@@ -142,17 +142,17 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
 | Topic                   | Producer              | Consumer        | Consumer Group     | Fungsi                           |
 | ----------------------- | --------------------- | --------------- | ------------------ | -------------------------------- |
-| `transactions.raw`      | Transaction Generator | Flink Job #1    | `fraud-enrichment` | Raw transaction                  |
-| `transactions.enriched` | Flink Job #1          | Flink Job #2    | `fraud-engine`     | Transaction yang sudah diperkaya |
-| `fraud.results`         | Flink Job #2          | PostgreSQL Sink | `fraud-sink`       | Semua hasil analisis             |
-| `fraud.alerts`          | Flink Job #2          | Alert Service   | `fraud-alert`      | Transaksi fraud/suspicious       |
-| `fraud.rules`           | Rule Service          | Flink Job #2    | `fraud-rules`      | Dynamic fraud rules              |
-| `fraud.dlq`             | Flink Job #1/#2       | DLQ Consumer    | `fraud-dlq`        | Data invalid/error               |
+| `transactions_raw`      | Transaction Generator | Flink Job #1    | `fraud-enrichment` | Raw transaction                  |
+| `transactions_enriched` | Flink Job #1          | Flink Job #2    | `fraud-engine`     | Transaction yang sudah diperkaya |
+| `fraud_results`         | Flink Job #2          | PostgreSQL Sink | `fraud-sink`       | Semua hasil analisis             |
+| `fraud_alerts`          | Flink Job #2          | Alert Service   | `fraud-alert`      | Transaksi fraud/suspicious       |
+| `fraud_rules`           | Rule Service          | Flink Job #2    | `fraud-rules`      | Dynamic fraud rules              |
+| `fraud_dlq`             | Flink Job #1/#2       | DLQ Consumer    | `fraud-dlq`        | Data invalid/error               |
 
 
 ### Schema Data in Kafka Topic
 
-1. transactions.raw
+1. transactions_raw
     - Fungsi: Topic ini berisi data transaksi mentah yang dihasilkan oleh Transaction Generator. Data di sini sebaiknya belum memiliki hasil analisis fraud dari Flink.
     - Producer: Transaction Generator
     - Consumer: Flink Job #1
@@ -203,7 +203,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         }
         ```
 
-2. transactions.enriched
+2. transactions_enriched
     - Topic ini adalah hasil dari Flink Job #1. 
     - Tujuannya bukan menentukan fraud final.
     - Tujuannya adalah mengubah raw transaction menjadi transaction yang sudah memiliki contextual information dan initial features.
@@ -271,7 +271,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         }
         ```
 
-3. fraud.results
+3. fraud_results
     - Ini adalah hasil utama FraudShield.
     - Producer: `Flink Job #2`
     - Consumer: `PostgreSQL Sink` & `Elasticsearch Sink`
@@ -347,8 +347,8 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         }
         ```
 
-4. fraud.alerts
-    - Tidak semua fraud.results harus menjadi alert.
+4. fraud_alerts
+    - Tidak semua fraud_results harus menjadi alert.
     - Misalnya: 
         - `NORMAL` → tidak perlu alert.
         - `SUSPICIOUS` → mungkin alert dengan severity MEDIUM.
@@ -390,9 +390,9 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         }
         ```
 
-5. fraud.rules
+5. fraud_rules
     - Topic ini berbeda dengan topic sebelumnya.
-    - Kalau topic lain berisi transaction events, fraud.rules berisi configuration/control events.
+    - Kalau topic lain berisi transaction events, fraud_rules berisi configuration/control events.
     - Producer: `Rule Management Service`
     - Consumer: `Flink Job #2`
     - Consumer Group: `fraud-rules`
@@ -458,7 +458,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         }
         ```
 
-6. fraud.dlq
+6. fraud_dlq
     - DLQ = Dead Letter Queue.
     - Topic ini sangat penting.
     - Jangan sampai satu transaksi corrupt menyebabkan Flink job mati.
@@ -479,14 +479,14 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
         Invalid Event
             ↓
-        fraud.dlq
+        fraud_dlq
         ``` 
     - Schema:
         ```
         | Kolom              | Tipe        | Contoh                    |
         | ------------------ | ----------- | ------------------------- |
         | `dlq_id`           | String      | `DLQ-000001`              |
-        | `source_topic`     | String      | `transactions.raw`        |
+        | `source_topic`     | String      | `transactions_raw`        |
         | `source_partition` | Integer     | `2`                       |
         | `source_offset`    | Long        | `18291`                   |
         | `event_key`        | String      | `CUS-000123`              |
@@ -512,7 +512,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
             ```
             {
                 "dlq_id": "DLQ-000001",
-                "source_topic": "transactions.raw",
+                "source_topic": "transactions_raw",
                 "source_partition": 2,
                 "source_offset": 18291,
                 "event_key": "CUS-001",
@@ -536,7 +536,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
                           │
                           ▼
                  ┌─────────────────┐
-                 │ transactions.raw│
+                 │ transactions_raw│
                  └────────┬────────┘
                           │
                           ▼
@@ -547,7 +547,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
           Valid Event            Invalid Event
               │                       │
               ▼                       ▼
- transactions.enriched          fraud.dlq
+ transactions_enriched          fraud_dlq
               │
               ▼
                   FLINK JOB #2
@@ -555,7 +555,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         ┌─────┴─────────────┐
         │                   │
         ▼                   ▼
- fraud.results         fraud.alerts
+ fraud_results         fraud_alerts
         │                   │
         ▼                   ▼
  PostgreSQL            Alert Service
@@ -567,14 +567,14 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
 | Job    | Nama                     | Input                                  | Output                          | Tanggung Jawab                                                              |
 | ------ | ------------------------ | -------------------------------------- | ------------------------------- | --------------------------------------------------------------------------- |
-| Job #1 | `fraudshield-enrichment` | `transactions.raw`                     | `transactions.enriched`         | Validation, Event Time, Watermark, enrichment, basic features               |
-| Job #2 | `fraudshield-engine`     | `transactions.enriched`, `fraud.rules` | `fraud.results`, `fraud.alerts` | Stateful processing, windowing, velocity, dynamic rules, CEP, fraud scoring |
+| Job #1 | `fraudshield-enrichment` | `transactions_raw`                     | `transactions_enriched`         | Validation, Event Time, Watermark, enrichment, basic features               |
+| Job #2 | `fraudshield-engine`     | `transactions_enriched`, `fraud_rules` | `fraud_results`, `fraud_alerts` | Stateful processing, windowing, velocity, dynamic rules, CEP, fraud scoring |
 
 
 ### Flink Job #1 — Transaction Enrichment
-- Nama job flink: fraudshield-enrichment
+- Nama job flink: TransactionEnrichment
 - Tujuan: mengubah Raw Transaction menjadi Enriched Transaction
-- Input: transactions.raw (Consumer group: fraud-enrichment)
+- Input: transactions_raw (Consumer group: fraud-enrichment)
 - Processing:
     1. Validation
         Memastikan:
@@ -620,7 +620,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
         Flink juga dapat membuat feature: `is_night_transaction`,  `is_new_device`,  `is_foreign_transaction`,  `is_high_amount`, `merchant_risk_level`
 
-- Output: `transactions.enriched`
+- Output: `transactions_enriched`
 
     Contoh:
     ```
@@ -637,9 +637,9 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
     }
     ```
 
-### Flink Job #2 — Stateful Fraud Detection
-- Nama job flink: fraudshield-engine
-- Input: transactions.enriched (Consumer group: fraud-engine)
+### Flink Job #2 — Stateful Fraud Engine
+- Nama job flink: StatefulFraudEngine
+- Input: transactions_enriched (Consumer group: fraud-engine)
 - Stateful Processing
 
     Misalnya: Customer C001
@@ -703,7 +703,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         ↓
     Kafka
         ↓
-    fraud.rules
+    fraud_rules
         ↓
     Flink Broadcast State
     ```
@@ -792,7 +792,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
 - Output
 
-    Flink Job #2 menghasilkan: `fraud.results`
+    Flink Job #2 menghasilkan: `fraud_results`
 
     Contoh:
     ```
@@ -814,7 +814,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
 ## Alert Service
 - Consumer: `fraud-alert`
-- membaca: `fraud.alerts`
+- membaca: `fraud_alerts`
 - kemudian:
     ```
     Kafka
@@ -835,7 +835,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
 ## PostgreSQL
 - Consumer: `fraud-sink`
-- membaca: `fraud.results`
+- membaca: `fraud_results`
 - dan menyimpan:
     ```
     transactions
@@ -857,7 +857,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
                        ▼
               ┌──────────────────┐
               │ Kafka            │
-              │ transactions.raw │
+              │ transactions_raw │
               └────────┬─────────┘
                        │
                 CG: fraud-enrichment
@@ -875,7 +875,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         └──────────────┬───────────────┘
                        │
                        ▼
-             Kafka transactions.enriched
+             Kafka transactions_enriched
                        │
                   CG: fraud-engine
                        │
@@ -897,7 +897,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
               ┌────────┴────────┐
               │                 │
               ▼                 ▼
-       fraud.results       fraud.alerts
+       fraud_results       fraud_alerts
               │                 │
        CG: fraud-sink     CG: fraud-alert
               │                 │
