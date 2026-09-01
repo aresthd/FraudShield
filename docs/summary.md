@@ -562,6 +562,70 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 ```
 
 
+## Sample Data
+
+- Kafka topic transactions_raw
+    ```
+    {
+        "transaction_id": "TX-20260901-71DFC13D",
+        "customer_id": "CUS-000001",
+        "account_id": "ACC-000001",
+        "transaction_type": "ONLINE_PURCHASE",
+        "amount": 2934870.44,
+        "currency": "IDR",
+        "merchant_id": "MER-00010",
+        "merchant_name": "Netflix",
+        "merchant_category": "DIGITAL_SERVICE",
+        "payment_method": "VIRTUAL_ACCOUNT",
+        "device_id": "DEV-000001",
+        "ip_address": "190.23.102.92",
+        "city": "Malang",
+        "country": "Indonesia",
+        "latitude": -7.983908,
+        "longitude": 112.621391,
+        "timestamp": "2026-09-01T22:56:22.609577+07:00",
+        "channel": "INTERNET_BANKING"
+    }
+    ```
+
+- Kafka topic transactions_enriched
+    ```
+    {
+        "transaction_id": "TX-20260901-71DFC13D",
+        "customer_id": "CUS-000001",
+        "account_id": "ACC-000001",
+        "transaction_type": "ONLINE_PURCHASE",
+        "amount": 2934870.44,
+        "currency": "IDR",
+        "merchant_id": "MER-00010",
+        "merchant_name": "Netflix",
+        "merchant_category": "DIGITAL_SERVICE",
+        "payment_method": "VIRTUAL_ACCOUNT",
+        "device_id": "DEV-000001",
+        "ip_address": "190.23.102.92",
+        "city": "Malang",
+        "country": "Indonesia",
+        "latitude": -7.983908,
+        "longitude": 112.621391,
+        "channel": "INTERNET_BANKING",
+        "account_age_days": 1395,
+        "customer_risk_level": "LOW",
+        "merchant_risk_level": "LOW",
+        "is_new_device": true,
+        "is_new_location": true,
+        "is_foreign_transaction": false,
+        "is_night_transaction": false,
+        "is_high_amount": false,
+        "event_date": "2026-09-01",
+        "event_hour": 15,
+        "timestamp": "2026-09-01T15:56:22.609Z",
+        "processing_time": "2026-09-01T15:59:38.998048620Z"
+    }
+    ```
+
+
+
+
 
 ## Flink Job
 

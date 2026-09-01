@@ -1,32 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="
-         http://maven.apache.org/POM/4.0.0
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
-    <groupId>org.kavit</groupId>
-    <artifactId>flink-kafka2postgres</artifactId>
+    <groupId>com.fraudshield</groupId>
+    <artifactId>fraudshield-flink-jobs</artifactId>
     <version>1.0.0</version>
-    <packaging>jar</packaging>
-    <name>flink-kafka2postgres</name>
-
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <java.version>17</java.version>
-        <flink.version>1.20.1</flink.version>
-        <kafka.version>3.8.1</kafka.version>
-        <jackson.version>2.17.2</jackson.version>
-        <postgres.version>42.7.4</postgres.version>
-        <log4j.version>2.24.1</log4j.version>
-        <junit.version>5.11.2</junit.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <flink.version>2.3.0</flink.version>
+        <kafka.connector.version>5.0.0-2.2</kafka.connector.version>
+        <jackson.version>2.20.0</jackson.version>
     </properties>
+    <!-- DEPENDENCIES -->
     <dependencies>
-
-        <!-- Apache Flink -->
+        <!-- Flink runtime disediakan oleh Flink cluster -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-streaming-java</artifactId>
@@ -40,122 +32,78 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Kafka -->
+        <!-- Kafka Connector ikut masuk ke shaded JAR -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
-            <version>3.3.0-1.20</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-            <version>${kafka.version}</version>
+            <version>${kafka.connector.version}</version>
         </dependency>
 
-        <!-- JDBC -->
         <dependency>
             <groupId>org.apache.flink</groupId>
-            <artifactId>flink-connector-jdbc</artifactId>
-            <version>3.3.0-1.20</version>
+            <artifactId>flink-connector-base</artifactId>
+            <version>2.3.0</version>
         </dependency>
 
-        <!-- PostgreSQL -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>${postgres.version}</version>
-        </dependency>
-
-        <!-- JSON -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-json</artifactId>
-            <version>${flink.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-core</artifactId>
-            <version>${jackson.version}</version>
-        </dependency>
+        <!-- Jackson ikut masuk ke shaded JAR -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>${jackson.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-            <version>${jackson.version}</version>
-        </dependency>
 
-        <!-- Logging -->
+        <!-- SLF4J disediakan oleh Flink -->
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-api</artifactId>
-            <version>${log4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>${log4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-slf4j2-impl</artifactId>
-            <version>${log4j.version}</version>
-        </dependency>
-
-        <!-- Testing -->
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
-            <version>${junit.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-engine</artifactId>
-            <version>${junit.version}</version>
-            <scope>test</scope>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.17</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
-        <build>
+    <!-- BUILD -->
+    <build>
         <plugins>
-            
-            <!-- Maven Compiler -->
+            <!-- JAVA COMPILER -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.14.0</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                    <release>${java.version}</release>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
 
-            
-            <!-- Maven Shade Plugin -->
-            <!-- Build Fat Jar -->
+            <!-- MAVEN SHADE PLUGIN -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.3</version>
+                <version>3.6.1</version>
                 <executions>
+
+                    <!-- TRANSACTION ENRICHMENT -->
                     <execution>
+                        <id>shade-transaction-enrichment</id>
                         <phase>package</phase>
                         <goals>
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <!-- Jangan membuat dependency-reduced-pom-->
                             <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <!--JAR shaded dibuat sebagai artifact tambahan menggunakan classifier-->
                             <shadedArtifactAttached>true</shadedArtifactAttached>
-                            <shadedClassifierName>jar-with-dependencies</shadedClassifierName>
+                            <shadedClassifierName>
+                                transaction-enrichment
+                            </shadedClassifierName>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>
+                                        com.flink.enrichment.TransactionEnrichment
+                                    </mainClass>
+                                </transformer>
+                            </transformers>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
@@ -166,83 +114,75 @@
                                     </excludes>
                                 </filter>
                             </filters>
+                        </configuration>
+                    </execution>
+
+                    <!-- STATEFUL FRAUD ENGINE -->
+                    <execution>
+                        <id>shade-stateful-fraud-engine</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>
+                                stateful-fraud-engine
+                            </shadedClassifierName>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>Main</mainClass>
+                                    <mainClass>
+                                        com.flink.engine.StatefulFraudEngine
+                                    </mainClass>
                                 </transformer>
                             </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
 
-            
-            <!-- Jar Plugin -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.4.2</version>
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <addClasspath>true</addClasspath>
-                            <mainClass>Main</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
-            </plugin>
-
-            
-            <!-- Surefire -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.0</version>
-            </plugin>
-
-            
-            <!-- Clean -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-clean-plugin</artifactId>
-                <version>3.4.0</version>
-            </plugin>
-
-            
-            <!-- Resources -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
-            </plugin>
-
-            <!-- Copy job JAR to jobs directory  -->
+            <!-- COPY SHADED JAR TO ../jobs -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
                 <version>3.1.0</version>
                 <executions>
                     <execution>
-                        <id>copy-job-jar</id>
+                        <id>copy-flink-jobs</id>
                         <phase>package</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
                         <configuration>
                             <target>
+                                <!-- Buat ../jobs jika belum ada. -->
                                 <mkdir dir="${project.basedir}/../jobs"/>
+                                <!-- Transaction Enrichment -->
                                 <copy
-                                    file="${project.build.directory}/${project.build.finalName}-jar-with-dependencies.jar"
-                                    tofile="${project.basedir}/../jobs/flink-kafka2postgres.jar"
+                                    file="${project.build.directory}/${project.artifactId}-${project.version}-transaction-enrichment.jar"
+                                    tofile="${project.basedir}/../jobs/transaction-enrichment.jar"
+                                    overwrite="true"/>
+                                <!-- Stateful Fraud Engine -->
+                                <copy
+                                    file="${project.build.directory}/${project.artifactId}-${project.version}-stateful-fraud-engine.jar"
+                                    tofile="${project.basedir}/../jobs/stateful-fraud-engine.jar"
                                     overwrite="true"/>
                             </target>
                         </configuration>
-
                     </execution>
                 </executions>
             </plugin>
-            
         </plugins>
     </build>
 </project>
