@@ -8,11 +8,11 @@ import time
 from faker import Faker
 from kafka import KafkaProducer
 from helpers import (
+    load_config,
     generate_amount,
     generate_ip_address,
-    generate_timestamp,
     generate_transaction_id,
-    load_static_data,
+    generate_timestamp,
     select_city,
     select_device,
 )
@@ -31,20 +31,22 @@ logger = logging.getLogger("fraudshield-data-producer")
 
 # Environment Variables
 KAFKA_SERVER = os.getenv("KAFKA_SERVER", "kafka:9092")
-KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "transactions_raw")
+# KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "transactions_raw")
+KAFKA_TOPIC_TRANSACTION = os.getenv("KAFKA_TOPIC_TRANSACTION", "transactions_raw")
+KAFKA_TOPIC_FRAUD_RULES = os.getenv("KAFKA_TOPIC_FRAUD_RULES", "fraud_rules")
 PRODUCER_INTERVAL_SECONDS = float(os.getenv("PRODUCER_INTERVAL_SECONDS", "1"))
 TOTAL_TRANSACTIONS = int(os.getenv("TOTAL_TRANSACTIONS", "0"))
 EXISTING_CUSTOMER_PROBABILITY = float(os.getenv("EXISTING_CUSTOMER_PROBABILITY", "0.95"))
 SUSPICIOUS_TRANSACTION_PROBABILITY = float(os.getenv("SUSPICIOUS_TRANSACTION_PROBABILITY", "0.10"))
 STATIC_DATA_FILE = os.getenv("STATIC_DATA_FILE", "static-data.yml")
-
+FRAUD_RULES_FILE = os.getenv("FRAUD_RULES_FILE", "fraud-rules.yml")
 
 # Random / Faker
 fake = Faker("id_ID")
 random.seed()
 
 # Load Static Data
-static_data = load_static_data(STATIC_DATA_FILE)
+static_data = load_config(STATIC_DATA_FILE)
 TRANSACTION_TYPES = static_data["transaction_types"]
 CHANNELS = static_data["channels"]
 PAYMENT_METHODS = static_data["payment_methods"]
@@ -186,6 +188,23 @@ def generate_transaction():
     return transaction
 
 
+# Fraud Rules
+def generate_fraud_rules():
+    """
+    Load fraud rules from JSON configuration.
+
+    Fraud rules are configuration/control events rather than
+    transaction events. Each rule is sent to the fraud_rules topic
+    and consumed by Flink Job #2 through Broadcast State.
+    """
+    rules = load_config(FRAUD_RULES_FILE)
+    updated_at = generate_timestamp()
+    for rule in rules:
+        rule["updated_at"] = updated_at
+
+    return rules
+    
+    
 # Kafka Producer
 def create_producer():
     """
@@ -216,6 +235,42 @@ def create_producer():
     return producer
 
 
+def send_fraud_rules(producer):
+    """
+    Send initial fraud rules to Kafka.
+    Each rule is sent as a separate Kafka event.
+    The rule_id is used as the Kafka message key so that
+    updates for the same rule are consistently partitioned.
+    """
+    rules = generate_fraud_rules()
+    logger.info(f"Publishing {len(rules)} fraud rules to topic '{KAFKA_TOPIC_FRAUD_RULES}'")
+
+    for rule in rules:
+        try:
+            future = producer.send(
+                KAFKA_TOPIC_FRAUD_RULES,
+                key=rule["rule_id"],
+                value=rule,
+            )
+
+            metadata = future.get(timeout=10)
+            logger.info(
+                f"Sent fraud rule | "
+                f"id={rule['rule_id']} | "
+                f"type={rule['rule_type']} | "
+                f"score={rule['score']} | "
+                f"enabled={rule['enabled']} | "
+                f"version={rule['version']} | "
+                f"partition={metadata.partition} | "
+                f"offset={metadata.offset}"
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to send fraud rule: {rule}")
+            logger.error(f"Exception: {e}")
+
+    producer.flush()
+
 # Graceful Shutdown
 running = True
 def shutdown_handler(signum, frame):
@@ -237,7 +292,8 @@ def run_producer():
     logger.info("=" * 70)
     logger.info("FraudShield Data Producer Started")
     logger.info(f"Kafka Server: {KAFKA_SERVER}")
-    logger.info(f"Kafka Topic: {KAFKA_TOPIC}")
+    logger.info(f"Kafka Topic Transactions: {KAFKA_TOPIC_TRANSACTION}")
+    logger.info(f"Kafka Topic Fraud Rules: {KAFKA_TOPIC_FRAUD_RULES}")
     logger.info(f"Producer Interval: {PRODUCER_INTERVAL_SECONDS} seconds")
     logger.info(f"Total Events: {'infinite' if TOTAL_TRANSACTIONS == 0 else TOTAL_TRANSACTIONS}")
     logger.info(f"Existing Customer: {EXISTING_CUSTOMER_PROBABILITY:.2f}")
@@ -246,6 +302,10 @@ def run_producer():
     logger.info("=" * 70)
 
     try:
+        # Publish Initial Fraud Rules
+        send_fraud_rules(producer)
+
+        # Transaction Producer Loop
         while running:
             if TOTAL_TRANSACTIONS > 0 and transaction_count >= TOTAL_TRANSACTIONS:
                 logger.info(f"Target transaction count reached: {transaction_count}")
@@ -254,7 +314,7 @@ def run_producer():
             transaction_key = transaction["customer_id"]
             try:
                 future = producer.send(
-                    KAFKA_TOPIC,
+                    KAFKA_TOPIC_TRANSACTION,
                     key=transaction_key,
                     value=transaction,
                 )
@@ -271,8 +331,9 @@ def run_producer():
                     f"offset={metadata.offset}"
                 )
 
-            except Exception:
+            except Exception as e:
                 logger.exception(f"Failed to send transaction: {transaction}")
+                logger.error(f"Exception: {e}")
 
             if running:
                 time.sleep(PRODUCER_INTERVAL_SECONDS)
@@ -291,6 +352,7 @@ if __name__ == "__main__":
         run_producer()
     except KeyboardInterrupt:
         logger.info("Producer interrupted by user.")
-    except Exception:
+    except Exception as e:
         logger.exception("Fatal error in producer.")
+        logger.error(f"Exception: {e}")
         sys.exit(1)

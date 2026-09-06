@@ -11,22 +11,36 @@ from faker import Faker
 logger = logging.getLogger("fraudshield-data-producer")
 fake = Faker("id_ID") 
 
-# Static Data Loader
-def load_static_data(file_path="static-data.yml"):
+# Config Loader
+def load_config(file_path):
     """
-    Load static/master data from YAML file.
+    Load configuration data from JSON or YAML file.
+    Supported formats:
+        - .json
+        - .yml
+        - .yaml
     """
     path = Path(file_path)
     if not path.exists():
-        raise FileNotFoundError(f"Static data file not found: {path}")
+        raise FileNotFoundError(f"Config file not found: {path}")
 
+    file_format = path.suffix.lower()
     with path.open("r", encoding="utf-8") as file:
-        data = yaml.safe_load(file)
+        if file_format == ".json":
+            data = json.load(file)
+        elif file_format in (".yml", ".yaml"):
+            data = yaml.safe_load(file)
+        else:
+            raise ValueError(
+                f"Unsupported config file format: {file_format}. "
+                f"Supported formats: .json, .yml, .yaml"
+            )
 
     if not data:
-        raise ValueError(f"Static data file is empty: {path}")
+        raise ValueError(f"Config file is empty: {path}")
 
     return data
+
 
 # Transaction ID
 def generate_transaction_id():

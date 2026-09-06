@@ -9,6 +9,7 @@ COPY requirements.txt .
 COPY python-producer.py .
 COPY helpers.py .
 COPY config/static-data.yml config/static-data.yml
+COPY config/fraud-rules.json config/fraud-rules.json
 
 RUN pip install --no-cache-dir -r requirements.txt
 
