@@ -71,13 +71,13 @@ Target utama project ini adalah menunjukkan bagaimana sebuah sistem streaming da
                 ┌──────────────────────────────┐
                 │                              │
                 │       FLINK JOB #1           │
-                │   Transaction Enrichment      │
+                │   Transaction Enrichment     │
                 │                              │
                 │ • Event Time                 │
                 │ • Watermark                  │
                 │ • Validation                 │
                 │ • Customer State             │
-                │ • Basic Enrichment            │
+                │ • Basic Enrichment           │
                 │                              │
                 └──────────────┬───────────────┘
                                 │
@@ -101,20 +101,20 @@ Target utama project ini adalah menunjukkan bagaimana sebuah sistem streaming da
                 │ • Dynamic Rules              │
                 │ • Fraud Score                │
                 │                              │
-                └──────────────┬───────────────┘
-                                │
-                ┌─────────────┴──────────────┐
-                │                            │
-                ▼                            ▼
-    transactions.analyzed               fraud_alerts
-                │                            │
-                │                            │
-        CG: fraud-sink              CG: fraud-alert
-                │                            │
-                ▼                            ▼
-            PostgreSQL                  Alert Service
-                                            │
-                                    Telegram / Email
+                └─────────────────┬────────────┘
+                                  │
+                    ┌─────────────┴──────────────┐
+                    │                            │
+                    ▼                            ▼
+        transactions.analyzed               fraud_alerts
+                    │                            │
+                    │                            │
+            CG: fraud-sink              CG: fraud-alert
+                    │                            │
+                    ▼                            ▼
+                PostgreSQL                  Alert Service
+                                                │
+                                        Telegram / Email
 ```
 
 Kemudian ada jalur khusus untuk dynamic fraud rules:

@@ -1,0 +1,155 @@
+// Ini adalah entry point Job #2
+
+package com.flink.engine;
+
+import com.flink.engine.model.EnrichedTransaction;
+import com.flink.engine.model.FraudAlert;
+import com.flink.engine.model.FraudResult;
+import com.flink.engine.model.FraudRule;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
+import org.apache.flink.streaming.api.datastream.BroadcastStream;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.core.execution.CheckpointingMode;
+import java.time.Duration;
+import java.time.Instant;
+
+public class StatefulFraudEngine {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        configureCheckpoint(env);
+
+        String kafkaServer = getEnv("KAFKA_SERVER", "kafka:9092");
+        String transactionTopic = getEnv("KAFKA_INPUT_TOPIC", "transactions_enriched");
+        String resultTopic = getEnv("KAFKA_OUTPUT_TOPIC", "fraud_results");
+        String alertTopic = getEnv("KAFKA_ALERT_TOPIC", "fraud_alerts");
+        String rulesTopic = getEnv("KAFKA_RULE_TOPIC", "fraud_rules");
+        String consumerGroup = getEnv("KAFKA_CONSUMER_GROUP", "fraud-engine");
+        long watermarkDelay = Long.parseLong(getEnv("WATERMARK_DELAY_SECONDS", "5"));
+
+        KafkaSource<String> transactionSource = KafkaSource.<String>builder()
+            .setBootstrapServers(kafkaServer)
+            .setTopics(transactionTopic)
+            .setGroupId(consumerGroup)
+            .setStartingOffsets(OffsetsInitializer.earliest())
+            .setValueOnlyDeserializer(new SimpleStringSchema())
+            .build();
+
+        KafkaSource<String> ruleSource = KafkaSource.<String>builder()
+            .setBootstrapServers(kafkaServer)
+            .setTopics(rulesTopic)
+            .setGroupId("fraud-rules")
+            .setStartingOffsets(OffsetsInitializer.earliest())
+            .setValueOnlyDeserializer(new SimpleStringSchema())
+            .build();
+
+        DataStream<String> rawTransactions = env
+            .fromSource(transactionSource,WatermarkStrategy.<String>forBoundedOutOfOrderness(Duration.ofSeconds(watermarkDelay))
+            .withTimestampAssigner((value, timestamp) -> extractTimestamp(value)),"Transactions Enriched Source");
+
+        DataStream<String> rawRules = env.fromSource(ruleSource, WatermarkStrategy.noWatermarks(), "Fraud Rules Source");
+
+        DataStream<EnrichedTransaction> transactions = rawTransactions.map(value -> MAPPER.readValue(value, EnrichedTransaction.class))
+            .returns(Types.POJO(EnrichedTransaction.class))
+            .name("Parse Enriched Transactions");
+
+        DataStream<FraudRule> rules = rawRules.map(value -> MAPPER.readValue(value,FraudRule.class))
+            .returns(Types.POJO(FraudRule.class))
+            .name("Parse Fraud Rules");
+
+        MapStateDescriptor<String, FraudRule> ruleStateDescriptor = new MapStateDescriptor <> ("fraud-rules",Types.STRING,Types.POJO(FraudRule.class));
+        BroadcastStream<FraudRule> broadcastRules = rules.broadcast(ruleStateDescriptor);
+        
+        SingleOutputStreamOperator<FraudResult> fraudResults = transactions.keyBy(transaction -> transaction.customerId)
+            .connect(broadcastRules)
+            .process(new FraudProcessFunction(ruleStateDescriptor))
+            .name("Stateful Fraud Engine")
+            .uid("stateful-fraud-engine");
+
+        SingleOutputStreamOperator<FraudAlert> fraudAlerts = fraudResults
+            .process(new FraudAlertProcessFunction())
+            .name("Fraud Alert Generator")
+            .uid("fraud-alert-generator");
+
+        KafkaSink<String> resultSink =
+            KafkaSink.<String>builder()
+                .setBootstrapServers(kafkaServer)
+                .setRecordSerializer(
+                        KafkaRecordSerializationSchema
+                                .builder()
+                                .setTopic(resultTopic)
+                                .setValueSerializationSchema(
+                                        new SimpleStringSchema())
+                                .build())
+                .build();
+
+        KafkaSink<String> alertSink =
+            KafkaSink.<String>builder()
+                .setBootstrapServers(kafkaServer)
+                .setRecordSerializer(
+                        KafkaRecordSerializationSchema
+                                .builder()
+                                .setTopic(alertTopic)
+                                .setValueSerializationSchema(
+                                        new SimpleStringSchema())
+                                .build())
+                .build();
+
+        fraudResults
+            .map(value ->
+                    MAPPER.writeValueAsString(value))
+            .sinkTo(resultSink)
+            .name("Kafka Fraud Results Sink")
+            .uid("kafka-fraud-results-sink");
+
+        fraudAlerts
+            .map(value ->
+                    MAPPER.writeValueAsString(value))
+            .sinkTo(alertSink)
+            .name("Kafka Fraud Alerts Sink")
+            .uid("kafka-fraud-alerts-sink");
+
+        env.execute("StatefulFraudEngine");
+    }
+
+    private static void configureCheckpoint(
+        StreamExecutionEnvironment env) {
+        boolean enabled = Boolean.parseBoolean(getEnv("CHECKPOINT_ENABLED", "true"));
+        if (!enabled) {
+            return;
+        }
+
+        long interval = Long.parseLong(getEnv("CHECKPOINT_INTERVAL", "30000"));
+        long timeout = Long.parseLong(getEnv("CHECKPOINT_TIMEOUT", "60000"));
+        long minPause = Long.parseLong(getEnv("CHECKPOINT_MIN_PAUSE", "5000"));
+
+        env.enableCheckpointing(interval, CheckpointingMode.EXACTLY_ONCE);
+        env.getCheckpointConfig().setCheckpointTimeout(timeout);
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);
+    }
+
+    private static long extractTimestamp(String json) {
+        try {
+            EnrichedTransaction transaction = MAPPER.readValue(json, EnrichedTransaction.class);
+            return Instant.parse(transaction.timestamp).toEpochMilli();
+        } catch (Exception e) {
+            return System.currentTimeMillis();
+        }
+    }
+
+    private static String getEnv(String key, String defaultValue) {
+        String value = System.getenv(key);
+        return value == null || value.isBlank() ? defaultValue : value;
+    }
+}
