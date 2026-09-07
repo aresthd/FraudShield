@@ -567,42 +567,63 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 - Kafka topic transactions_raw
     ```
     {
-        "transaction_id": "TX-20260901-71DFC13D",
+        "transaction_id": "TX-20260907-B416BCEF",
         "customer_id": "CUS-000001",
         "account_id": "ACC-000001",
-        "transaction_type": "ONLINE_PURCHASE",
-        "amount": 2934870.44,
+        "transaction_type": "CREDIT",
+        "amount": 21394465.07,
         "currency": "IDR",
-        "merchant_id": "MER-00010",
-        "merchant_name": "Netflix",
-        "merchant_category": "DIGITAL_SERVICE",
-        "payment_method": "VIRTUAL_ACCOUNT",
+        "merchant_id": "MER-00004",
+        "merchant_name": "Gojek",
+        "merchant_category": "TRANSPORTATION",
+        "payment_method": "BANK_TRANSFER",
         "device_id": "DEV-000001",
-        "ip_address": "190.23.102.92",
+        "ip_address": "210.46.20.135",
         "city": "Malang",
         "country": "Indonesia",
         "latitude": -7.983908,
         "longitude": 112.621391,
-        "timestamp": "2026-09-01T22:56:22.609577+07:00",
+        "timestamp": "2026-09-08T01:46:08.927941+07:00",
         "channel": "INTERNET_BANKING"
+    }
+    ```
+
+- Kafka topic fraud_rules
+    ```
+    {
+        "rule_id": "R001",
+        "rule_name": "High Amount Transaction",
+        "rule_type": "HIGH_AMOUNT",
+        "description": "Flag transaction with amount above threshold",
+        "threshold": 100000000,
+        "window_seconds": null,
+        "max_transactions": null,
+        "score": 40,
+        "severity": "HIGH",
+        "enabled": true,
+        "action": "FLAG",
+        "version": 1,
+        "updated_by": "admin",
+        "operation": "UPSERT",
+        "updated_at": "2026-09-08T01:46:06.600286+07:00"
     }
     ```
 
 - Kafka topic transactions_enriched
     ```
     {
-        "transaction_id": "TX-20260901-71DFC13D",
+        "transaction_id": "TX-20260907-B416BCEF",
         "customer_id": "CUS-000001",
         "account_id": "ACC-000001",
-        "transaction_type": "ONLINE_PURCHASE",
-        "amount": 2934870.44,
+        "transaction_type": "CREDIT",
+        "amount": 2.139446507E7,
         "currency": "IDR",
-        "merchant_id": "MER-00010",
-        "merchant_name": "Netflix",
-        "merchant_category": "DIGITAL_SERVICE",
-        "payment_method": "VIRTUAL_ACCOUNT",
+        "merchant_id": "MER-00004",
+        "merchant_name": "Gojek",
+        "merchant_category": "TRANSPORTATION",
+        "payment_method": "BANK_TRANSFER",
         "device_id": "DEV-000001",
-        "ip_address": "190.23.102.92",
+        "ip_address": "210.46.20.135",
         "city": "Malang",
         "country": "Indonesia",
         "latitude": -7.983908,
@@ -610,20 +631,63 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         "channel": "INTERNET_BANKING",
         "account_age_days": 1395,
         "customer_risk_level": "LOW",
-        "merchant_risk_level": "LOW",
+        "merchant_risk_level": "MEDIUM",
         "is_new_device": true,
         "is_new_location": true,
         "is_foreign_transaction": false,
         "is_night_transaction": false,
         "is_high_amount": false,
-        "event_date": "2026-09-01",
-        "event_hour": 15,
-        "timestamp": "2026-09-01T15:56:22.609Z",
-        "processing_time": "2026-09-01T15:59:38.998048620Z"
+        "event_date": "2026-09-07",
+        "event_hour": 18,
+        "timestamp": "2026-09-07T18:46:08.927Z",
+        "processing_time": "2026-09-07T18:47:53.947224098Z"
     }
     ```
 
+- Kafka topic fraud_results
+    ```
+    {
+        "result_id": "RES-e524f474-a10a-49a6-ad6c-395efb18618f",
+        "transaction_id": "TX-20260907-B416BCEF",
+        "customer_id": "CUS-000001",
+        "amount": 2.139446507E7,
+        "fraud_score": 0,
+        "status": "NORMAL",
+        "risk_level": "LOW",
+        "triggered_rules": [],
+        "rule_count": 0,
+        "velocity_count": 1,
+        "velocity_amount": 2.139446507E7,
+        "window_start": "2026-09-07T18:45:38.927Z",
+        "window_end": "2026-09-07T18:46:08.927Z",
+        "previous_city": null,
+        "current_city": "Malang",
+        "distance_km": 0.0,
+        "time_since_last_transaction_sec": 0,
+        "is_impossible_travel": false,
+        "detection_method": "RULE_ENGINE",
+        "processed_at": "2026-09-07T18:48:07.906242769Z"
+    }
+    ```
 
+- Kafka topic fraud_alerts
+    ```
+    {
+        "alert_id": "ALT-ec3aa6c5-5725-44a0-8ff3-06d5bf97676e",
+        "result_id": "RES-bdc3692f-c0eb-49f8-8363-f8a27d86d256",
+        "transaction_id": "TX-20260907-696A447D",
+        "customer_id": "CUS-000001",
+        "severity": "MEDIUM",
+        "fraud_score": 40,
+        "status": "SUSPICIOUS",
+        "alert_type": "VELOCITY",
+        "triggered_rules": [
+            "VELOCITY"
+        ],
+        "message": "Multiple suspicious transaction patterns detected",
+        "created_at": "2026-09-07T18:48:08.254121527Z"
+    }
+    ```
 
 
 

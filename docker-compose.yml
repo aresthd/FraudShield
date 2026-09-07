@@ -171,7 +171,6 @@ services:
     environment:
       JOB_MANAGER_RPC_ADDRESS: ${JOB_MANAGER_RPC_ADDRESS:-jobmanager}
       KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
-      # KAFKA_TOPIC: ${KAFKA_TOPIC:-transactions_raw}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
@@ -179,19 +178,23 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       # FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
       # FLINK_JOB_NAME: ${FLINK_JOB_NAME:-FlinkWeatherJob}
-      CHECKPOINT_ENABLED: ${TransactionEnrichment_CHECKPOINT_ENABLED:-true}
-      CHECKPOINT_INTERVAL: ${TransactionEnrichment_CHECKPOINT_INTERVAL:-30000}
-      CHECKPOINT_TIMEOUT: ${TransactionEnrichment_CHECKPOINT_TIMEOUT:-60000}
-      CHECKPOINT_MIN_PAUSE: ${TransactionEnrichment_CHECKPOINT_MIN_PAUSE:-5000}
-      CHECKPOINT_MAX_CONCURRENT: ${TransactionEnrichment_CHECKPOINT_MAX_CONCURRENT:-1}
-      CHECKPOINT_PATH: ${TransactionEnrichment_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
+      CHECKPOINT_ENABLED: ${CHECKPOINT_ENABLED:-true}
+      CHECKPOINT_INTERVAL: ${CHECKPOINT_INTERVAL:-30000}
+      CHECKPOINT_TIMEOUT: ${CHECKPOINT_TIMEOUT:-60000}
+      CHECKPOINT_MIN_PAUSE: ${CHECKPOINT_MIN_PAUSE:-5000}
+      CHECKPOINT_MAX_CONCURRENT: ${CHECKPOINT_MAX_CONCURRENT:-1}
+      CHECKPOINT_PATH_ENRICHMENT: ${ENRICHMENT_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
+      CHECKPOINT_PATH_ENGINE: ${ENGINE_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
 
-      KAFKA_INPUT_TOPIC: ${TransactionEnrichment_KAFKA_INPUT_TOPIC:-transactions_raw}
-      KAFKA_OUTPUT_TOPIC: ${TransactionEnrichment_KAFKA_OUTPUT_TOPIC:-transactions_enriched}
-      KAFKA_DLQ_TOPIC: ${TransactionEnrichment_KAFKA_DLQ_TOPIC:-fraud_dlq}
-      KAFKA_CONSUMER_GROUP: ${TransactionEnrichment_KAFKA_CONSUMER_GROUP:-fraud-enrichment}
-      WATERMARK_DELAY_SECONDS: ${TransactionEnrichment_WATERMARK_DELAY_SECONDS:-5}
-      HIGH_AMOUNT_THRESHOLD: ${TransactionEnrichment_HIGH_AMOUNT_THRESHOLD:-100000000}
+      KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-transactions_raw}
+      KAFKA_TOPIC_RULES: ${KAFKA_TOPIC_RULES:-fraud_rules}
+      KAFKA_TOPIC_ENRICHED: ${KAFKA_TOPIC_ENRICHED:-transactions_enriched}
+      KAFKA_TOPIC_DLQ: ${KAFKA_TOPIC_DLQ:-fraud_dlq}
+      KAFKA_TOPIC_RESULTS: ${KAFKA_TOPIC_RESULTS:-fraud_results}
+      KAFKA_CONSUMER_GROUP_ENRICHMENT: ${KAFKA_CONSUMER_GROUP_ENRICHMENT:-fraud-enrichment}
+      KAFKA_CONSUMER_GROUP_ENGINE: ${KAFKA_CONSUMER_GROUP_ENGINE:-fraud-engine}
+      WATERMARK_DELAY_SECONDS: ${WATERMARK_DELAY_SECONDS:-5}
+      HIGH_AMOUNT_THRESHOLD: ${ENRICHMENT_HIGH_AMOUNT_THRESHOLD:-100000000}
     volumes:
       - ./jobs:/opt/flink/jobs
       - ./savepoints:/opt/flink/savepoints

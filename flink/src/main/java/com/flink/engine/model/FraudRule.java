@@ -1,7 +1,10 @@
 package com.flink.engine.model;
 
 import java.io.Serializable;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class FraudRule implements Serializable {
     public String ruleId;
     public String ruleName;

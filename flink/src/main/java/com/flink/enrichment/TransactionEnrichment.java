@@ -20,10 +20,10 @@ import java.time.Duration;
 public class TransactionEnrichment {
 
     private static final String KAFKA_SERVER = env("KAFKA_SERVER", "kafka:9092");
-    private static final String INPUT_TOPIC = env("KAFKA_INPUT_TOPIC", "transactions_raw");
-    private static final String OUTPUT_TOPIC = env("KAFKA_OUTPUT_TOPIC", "transactions_enriched");
-    private static final String DLQ_TOPIC = env("KAFKA_DLQ_TOPIC", "fraud_dlq");
-    private static final String CONSUMER_GROUP = env("KAFKA_CONSUMER_GROUP", "fraud-enrichment");
+    private static final String INPUT_TOPIC = env("KAFKA_TOPIC_RAW", "transactions_raw");
+    private static final String OUTPUT_TOPIC = env("KAFKA_TOPIC_ENRICHED", "transactions_enriched");
+    private static final String DLQ_TOPIC = env("KAFKA_TOPIC_DLQ", "fraud_dlq");
+    private static final String CONSUMER_GROUP = env("KAFKA_CONSUMER_GROUP_ENRICHMENT", "fraud-enrichment");
     private static final long WATERMARK_DELAY_SECONDS = Long.parseLong(env("WATERMARK_DELAY_SECONDS", "5"));
 
     public static void main(String[] args) throws Exception {
@@ -121,7 +121,7 @@ public class TransactionEnrichment {
 
         Configuration config = new Configuration();
         config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
-        config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH", "file:///opt/flink/checkpoints"));
+        config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
         env.configure(config);
     }
 

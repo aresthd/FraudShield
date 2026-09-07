@@ -11,6 +11,8 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
@@ -30,13 +32,13 @@ public class StatefulFraudEngine {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         configureCheckpoint(env);
 
-        String kafkaServer = getEnv("KAFKA_SERVER", "kafka:9092");
-        String transactionTopic = getEnv("KAFKA_INPUT_TOPIC", "transactions_enriched");
-        String resultTopic = getEnv("KAFKA_OUTPUT_TOPIC", "fraud_results");
-        String alertTopic = getEnv("KAFKA_ALERT_TOPIC", "fraud_alerts");
-        String rulesTopic = getEnv("KAFKA_RULE_TOPIC", "fraud_rules");
-        String consumerGroup = getEnv("KAFKA_CONSUMER_GROUP", "fraud-engine");
-        long watermarkDelay = Long.parseLong(getEnv("WATERMARK_DELAY_SECONDS", "5"));
+        String kafkaServer = env("KAFKA_SERVER", "kafka:9092");
+        String transactionTopic = env("KAFKA_TOPIC_ENRICHED", "transactions_enriched");
+        String resultTopic = env("KAFKA_TOPIC_RESULTS", "fraud_results");
+        String alertTopic = env("KAFKA_TOPIC_ALERTS", "fraud_alerts");
+        String rulesTopic = env("KAFKA_TOPIC_RULES", "fraud_rules");
+        String consumerGroup = env("KAFKA_CONSUMER_GROUP_ENGINE", "fraud-engine");
+        long watermarkDelay = Long.parseLong(env("WATERMARK_DELAY_SECONDS", "5"));
 
         KafkaSource<String> transactionSource = KafkaSource.<String>builder()
             .setBootstrapServers(kafkaServer)
@@ -125,18 +127,25 @@ public class StatefulFraudEngine {
 
     private static void configureCheckpoint(
         StreamExecutionEnvironment env) {
-        boolean enabled = Boolean.parseBoolean(getEnv("CHECKPOINT_ENABLED", "true"));
+        boolean enabled = Boolean.parseBoolean(env("CHECKPOINT_ENABLED", "true"));
         if (!enabled) {
             return;
         }
 
-        long interval = Long.parseLong(getEnv("CHECKPOINT_INTERVAL", "30000"));
-        long timeout = Long.parseLong(getEnv("CHECKPOINT_TIMEOUT", "60000"));
-        long minPause = Long.parseLong(getEnv("CHECKPOINT_MIN_PAUSE", "5000"));
+        long interval = Long.parseLong(env("CHECKPOINT_INTERVAL", "30000"));
+        long timeout = Long.parseLong(env("CHECKPOINT_TIMEOUT", "60000"));
+        long minPause = Long.parseLong(env("CHECKPOINT_MIN_PAUSE", "5000"));
+        int maxConcurrent = Integer.parseInt(env("CHECKPOINT_MAX_CONCURRENT", "1"));
 
         env.enableCheckpointing(interval, CheckpointingMode.EXACTLY_ONCE);
         env.getCheckpointConfig().setCheckpointTimeout(timeout);
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);
+        env.getCheckpointConfig().setMaxConcurrentCheckpoints(maxConcurrent);
+
+        Configuration config = new Configuration();
+        config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+        config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
+        env.configure(config);
     }
 
     private static long extractTimestamp(String json) {
@@ -148,7 +157,7 @@ public class StatefulFraudEngine {
         }
     }
 
-    private static String getEnv(String key, String defaultValue) {
+    private static String env(String key, String defaultValue) {
         String value = System.getenv(key);
         return value == null || value.isBlank() ? defaultValue : value;
     }
