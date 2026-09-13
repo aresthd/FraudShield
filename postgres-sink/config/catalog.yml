@@ -1,0 +1,145 @@
+# kafka:
+#   bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+#   group_id: ${POSTGRES_SINK_GROUP_ID}
+#   auto_offset_reset: earliest
+
+# postgres:
+#   host: ${POSTGRES_HOST}
+#   port: ${POSTGRES_PORT}
+#   database: ${POSTGRES_DB}
+#   user: ${POSTGRES_USER}
+#   password: ${POSTGRES_PASSWORD}
+
+transactions_raw:
+    table: transactions_raw
+    key_column: transaction_id
+    columns:
+    - transaction_id
+    - customer_id
+    - account_id
+    - transaction_type
+    - amount
+    - currency
+    - merchant_id
+    - merchant_name
+    - merchant_category
+    - payment_method
+    - device_id
+    - ip_address
+    - city
+    - country
+    - latitude
+    - longitude
+    - timestamp
+    - channel
+
+transactions_enriched:
+    table: transactions_enriched
+    key_column: transaction_id
+    columns:
+    - transaction_id
+    - customer_id
+    - account_id
+    - transaction_type
+    - amount
+    - currency
+    - merchant_id
+    - merchant_name
+    - merchant_category
+    - payment_method
+    - device_id
+    - ip_address
+    - city
+    - country
+    - latitude
+    - longitude
+    - channel
+    - account_age_days
+    - customer_risk_level
+    - merchant_risk_level
+    - is_new_device
+    - is_new_location
+    - is_foreign_transaction
+    - is_night_transaction
+    - is_high_amount
+    - event_date
+    - event_hour
+    - timestamp
+    - processing_time
+
+fraud_results:
+    table: fraud_results
+    key_column: result_id
+    columns:
+    - result_id
+    - transaction_id
+    - customer_id
+    - amount
+    - fraud_score
+    - status
+    - risk_level
+    - triggered_rules
+    - rule_count
+    - velocity_count
+    - velocity_amount
+    - window_start
+    - window_end
+    - previous_city
+    - current_city
+    - distance_km
+    - time_since_last_transaction_sec
+    - is_impossible_travel
+    - detection_method
+    - processed_at
+
+fraud_alerts:
+    table: fraud_alerts
+    key_column: alert_id
+    columns:
+    - alert_id
+    - result_id
+    - transaction_id
+    - customer_id
+    - severity
+    - fraud_score
+    - status
+    - alert_type
+    - triggered_rules
+    - message
+    - created_at
+
+fraud_rules:
+    table: fraud_rules
+    key_column: rule_id
+    columns:
+    - rule_id
+    - rule_name
+    - rule_type
+    - description
+    - threshold
+    - window_seconds
+    - max_transactions
+    - score
+    - severity
+    - enabled
+    - action
+    - version
+    - updated_at
+    - updated_by
+    - operation
+
+fraud_dlq:
+    table: fraud_dlq
+    key_column: dlq_id
+    columns:
+    - dlq_id
+    - source_topic
+    - source_partition
+    - source_offset
+    - event_key
+    - error_type
+    - error_message
+    - failed_at_stage
+    - retry_count
+    - timestamp
+    - original_payload
