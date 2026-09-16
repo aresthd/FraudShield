@@ -115,6 +115,11 @@ services:
         container_name: FraudShield-data-producer
         environment:
             KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
+            POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+            POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+            POSTGRES_DB: ${POSTGRES_DB:-postgres}
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
             KAFKA_TOPIC_TRANSACTION: ${DATA_PRODUCER_TOPIC_TRANSACTION:-transactions_raw}
             KAFKA_TOPIC_FRAUD_RULES: ${DATA_PRODUCER_TOPIC_FRAUD_RULES:-fraud_rules}
             PRODUCER_INTERVAL_SECONDS: ${DATA_PRODUCER_INTERVAL_SECONDS:-1}
@@ -123,7 +128,6 @@ services:
             SUSPICIOUS_TRANSACTION_PROBABILITY: ${DATA_PRODUCER_SUSPICIOUS_TRANSACTION_PROBABILITY:-0.10}
             LOG_LEVEL: ${DATA_PRODUCER_LOG_LEVEL:-INFO}
             STATIC_DATA_FILE: /app/config/static-data.yml
-            FRAUD_RULES_FILE: /app/config/fraud-rules.json
         depends_on:
             kafka:
                 condition: service_healthy

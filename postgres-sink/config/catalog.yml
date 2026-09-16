@@ -1,15 +1,3 @@
-# kafka:
-#   bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
-#   group_id: ${POSTGRES_SINK_GROUP_ID}
-#   auto_offset_reset: earliest
-
-# postgres:
-#   host: ${POSTGRES_HOST}
-#   port: ${POSTGRES_PORT}
-#   database: ${POSTGRES_DB}
-#   user: ${POSTGRES_USER}
-#   password: ${POSTGRES_PASSWORD}
-
 transactions_raw:
     table: transactions_raw
     key_column: transaction_id
@@ -108,25 +96,25 @@ fraud_alerts:
     - message
     - created_at
 
-fraud_rules:
-    table: fraud_rules
-    key_column: rule_id
-    columns:
-    - rule_id
-    - rule_name
-    - rule_type
-    - description
-    - threshold
-    - window_seconds
-    - max_transactions
-    - score
-    - severity
-    - enabled
-    - action
-    - version
-    - updated_at
-    - updated_by
-    - operation
+# fraud_rules:
+#     table: fraud_rules
+#     key_column: rule_id
+#     columns:
+#     - rule_id
+#     - rule_name
+#     - rule_type
+#     - description
+#     - threshold
+#     - window_seconds
+#     - max_transactions
+#     - score
+#     - severity
+#     - enabled
+#     - action
+#     - version
+#     - updated_at
+#     - updated_by
+#     - operation
 
 fraud_dlq:
     table: fraud_dlq

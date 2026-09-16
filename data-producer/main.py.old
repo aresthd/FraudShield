@@ -1,0 +1,220 @@
+import logging
+import os
+import random
+import signal
+import sys
+import time
+
+from faker import Faker
+
+from helpers import (
+    load_config,
+    generate_amount,
+    generate_ip_address,
+    generate_transaction_id,
+    generate_timestamp,
+    select_city,
+    select_device,
+)
+
+from database import (
+    load_fraud_rules,
+)
+
+from kafka_producer import (
+    create_producer,
+    send_fraud_rules,
+)
+
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format=(
+        "%(asctime)s | "
+        "%(levelname)s | "
+        "%(message)s"
+    ),
+)
+
+logger = logging.getLogger("fraudshield-data-producer")
+
+
+# Environment Variables
+KAFKA_SERVER = os.getenv("KAFKA_SERVER", "kafka:9092")
+# KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "transactions_raw")
+KAFKA_TOPIC_TRANSACTION = os.getenv("KAFKA_TOPIC_TRANSACTION", "transactions_raw")
+KAFKA_TOPIC_FRAUD_RULES = os.getenv("KAFKA_TOPIC_FRAUD_RULES", "fraud_rules")
+PRODUCER_INTERVAL_SECONDS = float(os.getenv("PRODUCER_INTERVAL_SECONDS", "1"))
+TOTAL_TRANSACTIONS = int(os.getenv("TOTAL_TRANSACTIONS", "0"))
+EXISTING_CUSTOMER_PROBABILITY = float(os.getenv("EXISTING_CUSTOMER_PROBABILITY", "0.95"))
+SUSPICIOUS_TRANSACTION_PROBABILITY = float(os.getenv("SUSPICIOUS_TRANSACTION_PROBABILITY", "0.10"))
+STATIC_DATA_FILE = os.getenv("STATIC_DATA_FILE", "static-data.yml")
+FRAUD_RULES_FILE = os.getenv("FRAUD_RULES_FILE", "fraud-rules.yml")
+
+
+# Random / Faker
+fake = Faker("id_ID")
+random.seed()
+
+# Load Static Data
+static_data = load_config(STATIC_DATA_FILE)
+TRANSACTION_TYPES = static_data["transaction_types"]
+CHANNELS = static_data["channels"]
+PAYMENT_METHODS = static_data["payment_methods"]
+CITIES = static_data["cities"]
+MERCHANTS = static_data["merchants"]
+
+# Customer State
+customers = {}
+
+
+# Runtime State
+running = True
+
+
+# Graceful Shutdown
+def shutdown_handler(signum, frame):
+    """
+    Handle shutdown signals gracefully.
+    """
+    global running
+
+    logger.info(
+        f"Received signal {signum}. "
+        "Shutting down producer..."
+    )
+
+    running = False
+
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
+
+
+# Producer Loop
+def run_producer():
+    """
+    Start Kafka producer and generate transactions.
+    """
+    producer = create_producer()
+    transaction_count = 0
+    logger.info("=" * 70)
+    logger.info("FraudShield Data Producer Started")
+    logger.info(f"Kafka Server: {KAFKA_SERVER}")
+    logger.info(f"Kafka Topic Transactions: {KAFKA_TOPIC_TRANSACTION}")
+    logger.info(f"Kafka Topic Fraud Rules: {KAFKA_TOPIC_FRAUD_RULES}")
+    logger.info(f"Producer Interval: {PRODUCER_INTERVAL_SECONDS} seconds")
+    logger.info(f"Total Events: {'infinite' if TOTAL_TRANSACTIONS == 0 else TOTAL_TRANSACTIONS}")
+    logger.info(f"Existing Customer: {EXISTING_CUSTOMER_PROBABILITY:.2f}")
+    logger.info(f"Suspicious Event: {SUSPICIOUS_TRANSACTION_PROBABILITY:.2f}")
+    logger.info(f"Static Data: {STATIC_DATA_FILE}")
+    logger.info("=" * 70)
+
+    try:
+
+        # Load Fraud Rules from PostgreSQL
+        logger.info(
+            "Loading fraud rules from PostgreSQL..."
+        )
+
+        fraud_rules = load_fraud_rules()
+        if not fraud_rules:
+            raise RuntimeError(
+                "No fraud rules found in PostgreSQL."
+            )
+
+        # Publish Fraud Rules
+        send_fraud_rules(
+            logger=logger,
+            producer=producer,
+            topic=KAFKA_TOPIC_FRAUD_RULES,
+            rules=fraud_rules,
+            updated_at=generate_timestamp(),
+        )
+
+        # Transaction Producer Loop
+        while running:
+            if (
+                TOTAL_TRANSACTIONS > 0
+                and transaction_count
+                >= TOTAL_TRANSACTIONS
+            ):
+                logger.info(
+                    f"Target transaction count reached: "
+                    f"{transaction_count}"
+                )
+                break
+
+            transaction = generate_transaction()
+
+            transaction_key = (
+                transaction["customer_id"]
+            )
+
+            try:
+                future = producer.send(
+                    KAFKA_TOPIC_TRANSACTION,
+                    key=transaction_key,
+                    value=transaction,
+                )
+
+                metadata = future.get(
+                    timeout=10
+                )
+
+                transaction_count += 1
+
+                logger.info(
+                    f"Sent transaction | "
+                    f"id={transaction['transaction_id']} | "
+                    f"customer={transaction['customer_id']} | "
+                    f"type={transaction['transaction_type']} | "
+                    f"amount={transaction['amount']:.2f} | "
+                    f"city={transaction['city']} | "
+                    f"partition={metadata.partition} | "
+                    f"offset={metadata.offset}"
+                )
+
+            except Exception:
+                logger.exception(
+                    f"Failed to send transaction: "
+                    f"{transaction}"
+                )
+
+            if running:
+                time.sleep(
+                    PRODUCER_INTERVAL_SECONDS
+                )
+
+    finally:
+        logger.info(
+            "Flushing Kafka producer..."
+        )
+
+        producer.flush()
+        producer.close()
+
+        logger.info(
+            "FraudShield Data Producer stopped."
+        )
+
+
+# Application Entry Point
+
+if __name__ == "__main__":
+
+    try:
+        validate_static_data()
+
+        run_producer()
+
+    except KeyboardInterrupt:
+        logger.info(
+            "Producer interrupted by user."
+        )
+
+    except Exception:
+        logger.exception(
+            "Fatal error in producer."
+        )
+
+        sys.exit(1)

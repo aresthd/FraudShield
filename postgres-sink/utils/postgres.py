@@ -117,4 +117,4 @@ def process_message(connection, message, catalog):
     """
     topic_config = catalog.get(message.topic)
     validate_message(message, topic_config)
-    insert_record(connection=connection, topic_config=topic_config, payload=message.value,)
+    insert_record(connection=connection, topic_config=topic_config, payload=message.value)
