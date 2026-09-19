@@ -2,6 +2,7 @@
 
 package com.flink.engine;
 
+import com.flink.common.Parameters;
 import com.flink.engine.model.EnrichedTransaction;
 import com.flink.engine.model.FraudAlert;
 import com.flink.engine.model.FraudResult;
@@ -15,6 +16,7 @@ import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
@@ -29,17 +31,25 @@ public class StatefulFraudEngine {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public static void main(String[] args) throws Exception {
+        if (args.length < 1) {
+                throw new IllegalArgumentException("Usage: TransactionEnrichment <config-file> [job-name]");
+        }
+        
+        String paramsPath = args[0];
+        Parameters params = Parameters.load(paramsPath);
+        String jobName = args.length >= 2 ? args[1] : "StatefulFraudEngine";
+        String kafkaServer = params.getEnv("KAFKA_SERVER", "kafka:9092");
+        String transactionTopic = params.get("kafka.transaction.topic");
+        String resultTopic = params.get("kafka.result.topic");
+        String alertTopic = params.get("kafka.alert.topic");
+        String rulesTopic = params.get("kafka.rules.topic");
+        String consumerGroup = params.get("kafka.consumer.group");
+        long watermarkDelay = params.getLong("watermark.delay.seconds");
+
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        configureCheckpoint(env);
 
-        String kafkaServer = env("KAFKA_SERVER", "kafka:9092");
-        String transactionTopic = env("KAFKA_TOPIC_ENRICHED", "transactions_enriched");
-        String resultTopic = env("KAFKA_TOPIC_RESULTS", "fraud_results");
-        String alertTopic = env("KAFKA_TOPIC_ALERTS", "fraud_alerts");
-        String rulesTopic = env("KAFKA_TOPIC_RULES", "fraud_rules");
-        String consumerGroup = env("KAFKA_CONSUMER_GROUP_ENGINE", "fraud-engine");
-        long watermarkDelay = Long.parseLong(env("WATERMARK_DELAY_SECONDS", "5"));
-
+        configureCheckpoint(env, params);
+        
         KafkaSource<String> transactionSource = KafkaSource.<String>builder()
             .setBootstrapServers(kafkaServer)
             .setTopics(transactionTopic)
@@ -84,70 +94,58 @@ public class StatefulFraudEngine {
             .name("Fraud Alert Generator")
             .uid("fraud-alert-generator");
 
-        KafkaSink<String> resultSink =
-            KafkaSink.<String>builder()
-                .setBootstrapServers(kafkaServer)
-                .setRecordSerializer(
-                        KafkaRecordSerializationSchema
-                                .builder()
-                                .setTopic(resultTopic)
-                                .setValueSerializationSchema(
-                                        new SimpleStringSchema())
-                                .build())
-                .build();
-
-        KafkaSink<String> alertSink =
-            KafkaSink.<String>builder()
-                .setBootstrapServers(kafkaServer)
-                .setRecordSerializer(
-                        KafkaRecordSerializationSchema
-                                .builder()
-                                .setTopic(alertTopic)
-                                .setValueSerializationSchema(
-                                        new SimpleStringSchema())
-                                .build())
-                .build();
-
         fraudResults
-            .map(value ->
-                    MAPPER.writeValueAsString(value))
-            .sinkTo(resultSink)
+            .map(value -> MAPPER.writeValueAsString(value))
+            .sinkTo(createKafkaSink(kafkaServer, resultTopic))
             .name("Kafka Fraud Results Sink")
             .uid("kafka-fraud-results-sink");
 
         fraudAlerts
-            .map(value ->
-                    MAPPER.writeValueAsString(value))
-            .sinkTo(alertSink)
+            .map(value -> MAPPER.writeValueAsString(value))
+            .sinkTo(createKafkaSink(kafkaServer, alertTopic))
             .name("Kafka Fraud Alerts Sink")
             .uid("kafka-fraud-alerts-sink");
 
-        env.execute("StatefulFraudEngine");
+        env.execute(jobName);
     }
 
-    private static void configureCheckpoint(
-        StreamExecutionEnvironment env) {
-        boolean enabled = Boolean.parseBoolean(env("CHECKPOINT_ENABLED", "true"));
-        if (!enabled) {
-            return;
-        }
+    private static KafkaSink<String> createKafkaSink(String kafkaServer, String topic) {
+        return KafkaSink.<String>builder()
+                .setBootstrapServers(kafkaServer)
+                .setRecordSerializer(
+                        KafkaRecordSerializationSchema.builder()
+                                .setTopic(topic)
+                                .setValueSerializationSchema(new SimpleStringSchema())
+                                .build())
+                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .build();
+    }
+    
+    private static void configureCheckpoint(StreamExecutionEnvironment env, Parameters params) {
+        boolean enabled = params.getBoolean("checkpoint.enabled");
+        if (!enabled) return;
 
-        long interval = Long.parseLong(env("CHECKPOINT_INTERVAL", "30000"));
-        long timeout = Long.parseLong(env("CHECKPOINT_TIMEOUT", "60000"));
-        long minPause = Long.parseLong(env("CHECKPOINT_MIN_PAUSE", "5000"));
-        int maxConcurrent = Integer.parseInt(env("CHECKPOINT_MAX_CONCURRENT", "1"));
+        long interval = params.getLong("checkpoint.interval.ms");
+        long timeout = params.getLong("checkpoint.timeout.ms");
+        long minPause = params.getLong("checkpoint.min.pause.ms");
+        int maxConcurrent = params.getInt("checkpoint.max.concurrent");
 
         env.enableCheckpointing(interval, CheckpointingMode.EXACTLY_ONCE);
         env.getCheckpointConfig().setCheckpointTimeout(timeout);
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);
         env.getCheckpointConfig().setMaxConcurrentCheckpoints(maxConcurrent);
 
-        Configuration config = new Configuration();
-        config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
-        config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
-        env.configure(config);
-    }
+        // Configuration config = new Configuration();
+        // config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+        // config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
+        // env.configure(config);
 
+        Configuration parameters = new Configuration();
+        parameters.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+        parameters.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, params.get("checkpoint.path"));
+        env.configure(parameters);
+    }
+    
     private static long extractTimestamp(String json) {
         try {
             EnrichedTransaction transaction = MAPPER.readValue(json, EnrichedTransaction.class);
@@ -155,10 +153,5 @@ public class StatefulFraudEngine {
         } catch (Exception e) {
             return System.currentTimeMillis();
         }
-    }
-
-    private static String env(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? defaultValue : value;
     }
 }

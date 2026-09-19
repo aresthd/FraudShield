@@ -2,6 +2,7 @@
 
 package com.flink.enrichment;
 
+import com.flink.common.Parameters;
 import com.flink.enrichment.utils.*;
 import com.flink.enrichment.model.*;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -19,22 +20,29 @@ import java.time.Duration;
 
 public class TransactionEnrichment {
 
-    private static final String KAFKA_SERVER = env("KAFKA_SERVER", "kafka:9092");
-    private static final String INPUT_TOPIC = env("KAFKA_TOPIC_RAW", "transactions_raw");
-    private static final String OUTPUT_TOPIC = env("KAFKA_TOPIC_ENRICHED", "transactions_enriched");
-    private static final String DLQ_TOPIC = env("KAFKA_TOPIC_DLQ", "fraud_dlq");
-    private static final String CONSUMER_GROUP = env("KAFKA_CONSUMER_GROUP_ENRICHMENT", "fraud-enrichment");
-    private static final long WATERMARK_DELAY_SECONDS = Long.parseLong(env("WATERMARK_DELAY_SECONDS", "5"));
-
     public static void main(String[] args) throws Exception {
+        if (args.length < 1) {
+                throw new IllegalArgumentException("Usage: TransactionEnrichment <config-file> [job-name]");
+        }
+        
+        String paramsPath = args[0];
+        Parameters params = Parameters.load(paramsPath);
+        String jobName = args.length >= 2 ? args[1] : "TransactionEnrichment";
+        String kafkaServer = params.getEnv("KAFKA_SERVER", "kafka:9092");
+		String inputTopic = params.get("kafka.input.topic");
+		String outputTopic = params.get("kafka.output.topic");
+		String dlqTopic = params.get("kafka.dlq.topic");
+		String consumerGroup = params.get("kafka.consumer.group");
+		long watermarkDelay = params.getLong("watermark.delay.seconds");
+		
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        configureCheckpoint(env);
-
+        configureCheckpoint(env, params);
+        
         KafkaSource<String> source = KafkaSource.<String>builder()
-                .setBootstrapServers(KAFKA_SERVER)
-                .setTopics(INPUT_TOPIC)
-                .setGroupId(CONSUMER_GROUP)
+                .setBootstrapServers(kafkaServer)
+                .setTopics(inputTopic)
+                .setGroupId(consumerGroup)
                 .setStartingOffsets(OffsetsInitializer.earliest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
@@ -62,7 +70,7 @@ public class TransactionEnrichment {
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy
                                 .<RawTransaction>forBoundedOutOfOrderness(
-                                        Duration.ofSeconds(WATERMARK_DELAY_SECONDS)
+                                        Duration.ofSeconds(watermarkDelay)
                                 )
                                 .withTimestampAssigner(
                                         (transaction, timestamp) -> transaction.eventTimestamp
@@ -76,38 +84,37 @@ public class TransactionEnrichment {
                 .name("Customer Enrichment");
 
         enrichedStream
-                .sinkTo(createKafkaSink(OUTPUT_TOPIC))
+                .sinkTo(createKafkaSink(kafkaServer, outputTopic))
                 .name("Kafka Sink - transactions_enriched");
 
         invalidStream
-                .sinkTo(createKafkaSink(DLQ_TOPIC))
+                .sinkTo(createKafkaSink(kafkaServer, dlqTopic))
                 .name("Kafka Sink - fraud_dlq");
 
-        env.execute("TransactionEnrichment");
+        env.execute(jobName);
     }
 
-    private static KafkaSink<String> createKafkaSink(String topic) {
-        return KafkaSink.<String>builder()
-                .setBootstrapServers(KAFKA_SERVER)
-                .setRecordSerializer(
-                        KafkaRecordSerializationSchema.builder()
-                                .setTopic(topic)
-                                .setValueSerializationSchema(new SimpleStringSchema())
-                                .build()
-                )
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-                .build();
-    }
+	private static KafkaSink<String> createKafkaSink(String kafkaServer, String topic) {
+		return KafkaSink.<String>builder()
+				.setBootstrapServers(kafkaServer)
+				.setRecordSerializer(
+						KafkaRecordSerializationSchema.builder()
+								.setTopic(topic)
+								.setValueSerializationSchema(new SimpleStringSchema())
+								.build())
+				.setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+				.build();
+	}
 
-    private static void configureCheckpoint(StreamExecutionEnvironment env) {
-        boolean enabled = Boolean.parseBoolean(env("CHECKPOINT_ENABLED", "true"));
+    private static void configureCheckpoint(StreamExecutionEnvironment env, Parameters params) {
+		boolean enabled = params.getBoolean("checkpoint.enabled");
         if (!enabled) return;
 
-        long interval = Long.parseLong(env("CHECKPOINT_INTERVAL", "30000"));
-        long timeout = Long.parseLong(env("CHECKPOINT_TIMEOUT", "60000"));
-        long minPause = Long.parseLong(env("CHECKPOINT_MIN_PAUSE", "5000"));
-        int maxConcurrent = Integer.parseInt(env("CHECKPOINT_MAX_CONCURRENT", "1"));
-
+		long interval = params.getLong("checkpoint.interval.ms");
+		long timeout = params.getLong("checkpoint.timeout.ms");
+		long minPause = params.getLong("checkpoint.min.pause.ms");
+		int maxConcurrent = params.getInt("checkpoint.max.concurrent");
+	
         env.enableCheckpointing(interval);
         env.getCheckpointConfig().setCheckpointTimeout(timeout);
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);
@@ -119,15 +126,14 @@ public class TransactionEnrichment {
         // env.getCheckpointConfig().set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
         // env.getCheckpointConfig().set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH", "file:///opt/flink/checkpoints"));
 
-        Configuration config = new Configuration();
-        config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
-        config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
-        env.configure(config);
-    }
+    //     Configuration config = new Configuration();
+    //     config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+    //     config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
+	//     env.configure(config);
 
-
-    private static String env(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? defaultValue : value;
+		Configuration parameters = new Configuration();
+		parameters.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+		parameters.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, params.get("checkpoint.path"));
+		env.configure(parameters);
     }
 }

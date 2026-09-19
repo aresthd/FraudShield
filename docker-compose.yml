@@ -206,27 +206,28 @@ services:
             POSTGRES_DB: ${POSTGRES_DB:-postgres}
             POSTGRES_USER: ${POSTGRES_USER:-postgres}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-            # FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
+            FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
             # FLINK_JOB_NAME: ${FLINK_JOB_NAME:-FlinkWeatherJob}
-            CHECKPOINT_ENABLED: ${CHECKPOINT_ENABLED:-true}
-            CHECKPOINT_INTERVAL: ${CHECKPOINT_INTERVAL:-30000}
-            CHECKPOINT_TIMEOUT: ${CHECKPOINT_TIMEOUT:-60000}
-            CHECKPOINT_MIN_PAUSE: ${CHECKPOINT_MIN_PAUSE:-5000}
-            CHECKPOINT_MAX_CONCURRENT: ${CHECKPOINT_MAX_CONCURRENT:-1}
-            CHECKPOINT_PATH_ENRICHMENT: ${ENRICHMENT_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
-            CHECKPOINT_PATH_ENGINE: ${ENGINE_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
+            # CHECKPOINT_ENABLED: ${CHECKPOINT_ENABLED:-true}
+            # CHECKPOINT_INTERVAL: ${CHECKPOINT_INTERVAL:-30000}
+            # CHECKPOINT_TIMEOUT: ${CHECKPOINT_TIMEOUT:-60000}
+            # CHECKPOINT_MIN_PAUSE: ${CHECKPOINT_MIN_PAUSE:-5000}
+            # CHECKPOINT_MAX_CONCURRENT: ${CHECKPOINT_MAX_CONCURRENT:-1}
+            # CHECKPOINT_PATH_ENRICHMENT: ${ENRICHMENT_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
+            # CHECKPOINT_PATH_ENGINE: ${ENGINE_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
 
-            KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-transactions_raw}
-            KAFKA_TOPIC_RULES: ${KAFKA_TOPIC_RULES:-fraud_rules}
-            KAFKA_TOPIC_ENRICHED: ${KAFKA_TOPIC_ENRICHED:-transactions_enriched}
-            KAFKA_TOPIC_DLQ: ${KAFKA_TOPIC_DLQ:-fraud_dlq}
-            KAFKA_TOPIC_RESULTS: ${KAFKA_TOPIC_RESULTS:-fraud_results}
-            KAFKA_CONSUMER_GROUP_ENRICHMENT: ${KAFKA_CONSUMER_GROUP_ENRICHMENT:-fraud-enrichment}
-            KAFKA_CONSUMER_GROUP_ENGINE: ${KAFKA_CONSUMER_GROUP_ENGINE:-fraud-engine}
-            WATERMARK_DELAY_SECONDS: ${WATERMARK_DELAY_SECONDS:-5}
-            HIGH_AMOUNT_THRESHOLD: ${ENRICHMENT_HIGH_AMOUNT_THRESHOLD:-100000000}
+            # KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-transactions_raw}
+            # KAFKA_TOPIC_RULES: ${KAFKA_TOPIC_RULES:-fraud_rules}
+            # KAFKA_TOPIC_ENRICHED: ${KAFKA_TOPIC_ENRICHED:-transactions_enriched}
+            # KAFKA_TOPIC_DLQ: ${KAFKA_TOPIC_DLQ:-fraud_dlq}
+            # KAFKA_TOPIC_RESULTS: ${KAFKA_TOPIC_RESULTS:-fraud_results}
+            # KAFKA_CONSUMER_GROUP_ENRICHMENT: ${KAFKA_CONSUMER_GROUP_ENRICHMENT:-fraud-enrichment}
+            # KAFKA_CONSUMER_GROUP_ENGINE: ${KAFKA_CONSUMER_GROUP_ENGINE:-fraud-engine}
+            # WATERMARK_DELAY_SECONDS: ${WATERMARK_DELAY_SECONDS:-5}
+            # HIGH_AMOUNT_THRESHOLD: ${ENRICHMENT_HIGH_AMOUNT_THRESHOLD:-100000000}
         volumes:
             - ./jobs:/opt/flink/jobs
+            - ./flink/config:/opt/flink/config
             - ./savepoints:/opt/flink/savepoints
             - ./checkpoints:/opt/flink/checkpoints
         healthcheck:
@@ -257,13 +258,13 @@ services:
             POSTGRES_USER: ${POSTGRES_USER:-postgres}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
             FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
-            FLINK_JOB_NAME: ${FLINK_JOB_NAME:-FlinkWeatherJob}
-            CHECKPOINT_ENABLED: ${CHECKPOINT_ENABLED:-true}
-            CHECKPOINT_INTERVAL: ${CHECKPOINT_INTERVAL:-30000}
-            CHECKPOINT_TIMEOUT: ${CHECKPOINT_TIMEOUT:-60000}
-            CHECKPOINT_MIN_PAUSE: ${CHECKPOINT_MIN_PAUSE:-5000}
-            CHECKPOINT_MAX_CONCURRENT: ${CHECKPOINT_MAX_CONCURRENT:-1}
-            CHECKPOINT_PATH: ${CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
+            # FLINK_JOB_NAME: ${FLINK_JOB_NAME:-FlinkWeatherJob}
+            # CHECKPOINT_ENABLED: ${CHECKPOINT_ENABLED:-true}
+            # CHECKPOINT_INTERVAL: ${CHECKPOINT_INTERVAL:-30000}
+            # CHECKPOINT_TIMEOUT: ${CHECKPOINT_TIMEOUT:-60000}
+            # CHECKPOINT_MIN_PAUSE: ${CHECKPOINT_MIN_PAUSE:-5000}
+            # CHECKPOINT_MAX_CONCURRENT: ${CHECKPOINT_MAX_CONCURRENT:-1}
+            # CHECKPOINT_PATH: ${CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
         networks:
             bridge:
                 aliases:
