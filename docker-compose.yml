@@ -54,7 +54,7 @@ services:
                 aliases:
                 - kafka
 
-  # Debezium Kafka Connect
+    # Debezium Kafka Connect
     kafka-connect:
         image: debezium/connect:2.5
         hostname: kafka-connect
@@ -189,6 +189,30 @@ services:
             bridge:
                 aliases:
                     - postgres-sink
+
+    alerting:
+        build:
+            context: ./alerting
+        container_name: FraudShield-alerting
+        restart: unless-stopped
+        environment:
+            KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
+            KAFKA_ALERT_TOPIC: ${KAFKA_ALERT_TOPIC:-fraud_alerts}
+            KAFKA_ALERT_CONSUMER_GROUP: ${KAFKA_ALERT_CONSUMER_GROUP:-fraud-alert}
+            KAFKA_ALERT_AUTO_OFFSET_RESET: ${KAFKA_ALERT_AUTO_OFFSET_RESET:-latest}
+            KAFKA_ALERT_ENABLE_AUTO_COMMIT: ${KAFKA_ALERT_ENABLE_AUTO_COMMIT:-False}
+            TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+            TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+            TELEGRAM_TOPIC_ID: ${TELEGRAM_TOPIC_ID}
+            ALERT_SUMMARY_INTERVAL_SECONDS: ${ALERT_SUMMARY_INTERVAL_SECONDS}
+            ALERT_SUMMARY_MAX_RECENT_ALERTS: ${ALERT_SUMMARY_MAX_RECENT_ALERTS}
+        depends_on:
+            kafka:
+                condition: service_healthy
+        networks:
+            bridge:
+                aliases:
+                    - alerting
 
     jobmanager:
         build:

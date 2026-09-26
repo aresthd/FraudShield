@@ -944,14 +944,14 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
     ```
 
 
-## Alert Service
+## Alerting
 - Consumer: `fraud-alert`
 - membaca: `fraud_alerts`
 - kemudian:
     ```
     Kafka
     ↓
-    Alert Service
+    Alerting
     ↓
     Telegram
 
@@ -959,7 +959,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
     Kafka
     ↓
-    Alert Service
+    Alerting
     ↓
     Email
     ```
