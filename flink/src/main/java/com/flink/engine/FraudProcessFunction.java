@@ -32,246 +32,314 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public class FraudProcessFunction extends KeyedBroadcastProcessFunction<String, EnrichedTransaction, FraudRule, FraudResult> {
-    private final MapStateDescriptor<String, FraudRule> ruleStateDescriptor;
-    private transient ValueState<CustomerBehaviorState> customerState;
-    private transient ListState<TransactionHistory> transactionHistoryState;
 
+// Process keyed transactions together with broadcast fraud rules and produce FraudResult objects.
+public class FraudProcessFunction extends KeyedBroadcastProcessFunction<String, EnrichedTransaction, FraudRule, FraudResult> {
+    private final MapStateDescriptor<String, FraudRule> ruleStateDescriptor;        // Store the descriptor used to access the fraud rule Broadcast State.
+    private transient ValueState<CustomerBehaviorState> customerState;              // Store the latest behavior state for each customer.
+    private transient ListState<TransactionHistory> transactionHistoryState; // Store recent transaction history for each customer.
+
+    
+    // Receive and store the Broadcast State descriptor during function construction.
     public FraudProcessFunction(MapStateDescriptor<String, FraudRule> ruleStateDescriptor) {
+        // Save the Broadcast State descriptor for later access.
         this.ruleStateDescriptor = ruleStateDescriptor;
     }
 
+
+    // Initialize Flink managed states when the operator starts.
     @Override
     public void open(OpenContext openContext) throws Exception {
-        ValueStateDescriptor<CustomerBehaviorState> customerDescriptor =
-                new ValueStateDescriptor<>("customer-behavior-state", Types.POJO(CustomerBehaviorState.class));
+        // Define the descriptor for customer behavior ValueState.
+        ValueStateDescriptor<CustomerBehaviorState> customerDescriptor = new ValueStateDescriptor<>( "customer-behavior-state", Types.POJO(CustomerBehaviorState.class));
+
+        // Register the customer behavior state with Flink's runtime state backend.
         customerState = getRuntimeContext().getState(customerDescriptor);
 
-        ListStateDescriptor<TransactionHistory> historyDescriptor =
-                new ListStateDescriptor<>("transaction-history-state", Types.POJO(TransactionHistory.class));
+        // Define the descriptor for recent transaction history ListState.
+        ListStateDescriptor<TransactionHistory> historyDescriptor = new ListStateDescriptor<>( "transaction-history-state", Types.POJO(TransactionHistory.class));
+
+        // Register the transaction history state with Flink's runtime state backend.
         transactionHistoryState = getRuntimeContext().getListState(historyDescriptor);
     }
 
+
+    // Process each incoming fraud rule and update the Broadcast State.
     @Override
     public void processBroadcastElement(FraudRule rule, Context ctx, Collector<FraudResult> out) throws Exception {
+        // Ignore invalid rules that do not contain a rule identifier.
         if (rule == null || rule.ruleId == null) {
             return;
         }
 
+        // Get the writable Broadcast State associated with the rule descriptor.
         BroadcastState<String, FraudRule> state = ctx.getBroadcastState(ruleStateDescriptor);
 
+        // Remove the rule from Broadcast State when the operation is DELETE.
         if ("DELETE".equalsIgnoreCase(rule.operation)) {
+            // Delete the rule using its rule identifier as the key.
             state.remove(rule.ruleId);
+
+            // Stop processing this rule after deletion.
             return;
         }
 
+        // Retrieve the currently stored version of this rule.
         FraudRule existing = state.get(rule.ruleId);
 
-        if (existing == null ||
-                existing.version == null ||
-                rule.version == null ||
-                rule.version >= existing.version) {
+        // Update the state only when the incoming rule is newer or no existing rule exists.
+        if (existing == null || existing.version == null || rule.version == null || rule.version >= existing.version) {
+            // Store or replace the fraud rule in Broadcast State.
             state.put(rule.ruleId, rule);
         }
     }
 
+
+    // Process each enriched transaction and evaluate it against the active fraud rules.
     @Override
     public void processElement(EnrichedTransaction transaction, ReadOnlyContext ctx, Collector<FraudResult> out) throws Exception {
+
+        // Ignore transactions that do not contain a customer identifier.
         if (transaction == null || transaction.customerId == null) {
             return;
         }
 
+        // Extract the event timestamp from the transaction.
         long currentTimestamp = transactionTimestamp(transaction);
 
+        // Retrieve the previously stored behavior state for this customer.
         CustomerBehaviorState behaviorState = customerState.value();
 
+        // Create a new behavior state when this is the customer's first transaction.
         if (behaviorState == null) {
             behaviorState = new CustomerBehaviorState();
         }
 
+        // Create a temporary list for transaction history within the velocity window.
         List<TransactionHistory> histories = new ArrayList<>();
 
+        // Iterate through the customer's previously stored transaction history.
         for (TransactionHistory history : transactionHistoryState.get()) {
+            // Keep only transactions that occurred within the previous 30 seconds.
             if (currentTimestamp - history.timestamp <= 30_000L) {
+                // Add the recent transaction to the active velocity window.
                 histories.add(history);
             }
         }
 
+        // Add the current transaction to the velocity window.
         histories.add(new TransactionHistory(currentTimestamp, transaction.amount));
 
+        // Count the number of transactions inside the velocity window.
         int velocityCount = histories.size();
+
+        // Initialize the total transaction amount inside the velocity window.
         double velocityAmount = 0.0;
 
+        // Iterate through all transactions in the velocity window.
         for (TransactionHistory history : histories) {
+            // Add each transaction amount to the velocity total.
             velocityAmount += history.amount;
         }
 
+        // Initialize the elapsed time since the previous transaction.
         long timeSinceLastTransactionSec = 0L;
+
+        // Initialize the geographic distance from the previous transaction.
         double distanceKm = 0.0;
+
+        // Initialize impossible travel detection as false.
         boolean impossibleTravel = false;
 
+        // Retrieve the city from the customer's previous transaction.
         String previousCity = behaviorState.lastTransactionCity;
 
+        // Continue travel analysis only when a previous transaction timestamp exists.
         if (behaviorState.lastTransactionTime != null) {
-            timeSinceLastTransactionSec =
-                    Math.max(0L, (currentTimestamp - behaviorState.lastTransactionTime) / 1000L);
+            // Calculate the elapsed time between the current and previous transaction.
+            timeSinceLastTransactionSec = Math.max(0L, (currentTimestamp - behaviorState.lastTransactionTime) / 1000L);
 
-            if (previousCity != null &&
-                    transaction.city != null &&
-                    !previousCity.equalsIgnoreCase(transaction.city)) {
-
+            // Check whether the current and previous transactions occurred in different cities.
+            if (previousCity != null && transaction.city != null && !previousCity.equalsIgnoreCase(transaction.city)) {
+                // Estimate the distance between the previous and current cities.
                 distanceKm = estimateDistance(previousCity, transaction.city);
-
-                impossibleTravel =
-                        FraudDetectionUtils.isImpossibleTravel(
-                                distanceKm,
-                                timeSinceLastTransactionSec);
+                // Determine whether the required travel speed is impossible.
+                impossibleTravel = FraudDetectionUtils.isImpossibleTravel(distanceKm, timeSinceLastTransactionSec);
             }
         }
 
+        // Create a temporary list containing all currently enabled fraud rules.
         List<FraudRule> rules = new ArrayList<>();
 
-        for (Map.Entry<String, FraudRule> entry :
-                ctx.getBroadcastState(ruleStateDescriptor).immutableEntries()) {
-
+        // Iterate through all fraud rules stored in the Broadcast State.
+        for (Map.Entry<String, FraudRule> entry : ctx.getBroadcastState(ruleStateDescriptor).immutableEntries()) {
+            // Retrieve the FraudRule object from the current Broadcast State entry.
             FraudRule rule = entry.getValue();
 
+            // Check that the rule exists and is explicitly enabled.
             if (rule != null && Boolean.TRUE.equals(rule.enabled)) {
+                // Add the enabled rule to the list used for transaction evaluation.
                 rules.add(rule);
             }
         }
 
+        // Create a list to store the rules triggered by the current transaction.
         List<String> triggeredRules = new ArrayList<>();
 
+        // Initialize the total fraud score for the current transaction.
         int fraudScore = 0;
 
+        // Evaluate the current transaction against every enabled fraud rule.
         for (FraudRule rule : rules) {
-            if (!matchesRule(
-                    rule,
-                    transaction,
-                    velocityCount,
-                    impossibleTravel)) {
+            // Skip the rule when the current transaction does not match its conditions.
+            if (!matchesRule(rule, transaction, velocityCount, impossibleTravel)) {
                 continue;
             }
 
+            // Record the rule type when the rule is triggered.
             if (rule.ruleType != null) {
                 triggeredRules.add(rule.ruleType);
             }
 
+            // Add the rule's configured score to the total fraud score.
             if (rule.score != null) {
                 fraudScore += rule.score;
             }
         }
 
+        // Convert the total fraud score into NORMAL, SUSPICIOUS, or FRAUD status.
         String status = FraudScoringUtils.classifyStatus(fraudScore);
+
+        // Convert the total fraud score into LOW, MEDIUM, or HIGH risk level.
         String riskLevel = FraudScoringUtils.classifyRiskLevel(fraudScore);
 
+        // Create a new FraudResult object containing the detection result.
         FraudResult result = new FraudResult();
 
-        result.resultId = "RES-" + UUID.randomUUID();
-        result.transactionId = transaction.transactionId;
-        result.customerId = transaction.customerId;
-        result.amount = transaction.amount;
-        result.fraudScore = fraudScore;
-        result.status = status;
-        result.riskLevel = riskLevel;
-        result.triggeredRules = triggeredRules;
-        result.ruleCount = triggeredRules.size();
-        result.velocityCount = velocityCount;
-        result.velocityAmount = velocityAmount;
-        result.windowStart =
-                Instant.ofEpochMilli(currentTimestamp - 30_000L).toString();
-        result.windowEnd =
-                Instant.ofEpochMilli(currentTimestamp).toString();
-        result.previousCity = previousCity;
-        result.currentCity = transaction.city;
-        result.distanceKm = distanceKm;
-        result.timeSinceLastTransactionSec = timeSinceLastTransactionSec;
-        result.isImpossibleTravel = impossibleTravel;
-        result.detectionMethod = "RULE_ENGINE";
-        result.processedAt = Instant.now().toString();
+        // Fill the fraud_result data
+        result.resultId = "RES-" + UUID.randomUUID();                                       // Generate a unique identifier for the fraud result.
+        result.transactionId = transaction.transactionId;                                   // Copy the transaction identifier into the fraud result.
+        result.customerId = transaction.customerId;                                         // Copy the customer identifier into the fraud result.
+        result.amount = transaction.amount;                                                 // Copy the transaction amount into the fraud result.
+        result.fraudScore = fraudScore;                                                     // Store the calculated total fraud score.
+        result.status = status;                                                             // Store the calculated transaction status.
+        result.riskLevel = riskLevel;                                                       // Store the calculated risk level.
+        result.triggeredRules = triggeredRules;                                             // Store all fraud rule types triggered by the transaction.
+        result.ruleCount = triggeredRules.size();                                           // Store the number of triggered fraud rules.
+        result.velocityCount = velocityCount;                                               // Store the number of transactions inside the velocity window.
+        result.velocityAmount = velocityAmount;                                             // Store the total transaction amount inside the velocity window.
+        result.windowStart = Instant.ofEpochMilli(currentTimestamp - 30_000L).toString();   // Calculate and store the beginning timestamp of the 30-second detection window.
+        result.windowEnd = Instant.ofEpochMilli(currentTimestamp).toString();               // Store the current transaction timestamp as the end of the detection window.
+        result.previousCity = previousCity;                                                 // Store the city from the previous transaction.
+        result.currentCity = transaction.city;                                              // Store the city from the current transaction.
+        result.distanceKm = distanceKm;                                                     // Store the estimated distance between the two transaction locations.
+        result.timeSinceLastTransactionSec = timeSinceLastTransactionSec;                   // Store the elapsed time since the customer's previous transaction.
+        result.isImpossibleTravel = impossibleTravel;                                       // Store the impossible travel detection result.
+        result.detectionMethod = "RULE_ENGINE";                                             // Identify the detection mechanism as the rule engine.
+        result.processedAt = Instant.now().toString();                                      // Store the timestamp when the fraud result is processed.
 
+        // Persist the current transaction history for future velocity checks.
         transactionHistoryState.update(histories);
 
-        behaviorState.lastTransactionTime = currentTimestamp;
-        behaviorState.lastTransactionCity = transaction.city;
-        behaviorState.lastDevice = transaction.deviceId;
-        behaviorState.lastAmount = transaction.amount;
-        behaviorState.transactionCount++;
-        behaviorState.totalTransactionAmount += transaction.amount;
+        // Update the behavior state
+        behaviorState.lastTransactionTime = currentTimestamp;           // Update the customer's last transaction timestamp.
+        behaviorState.lastTransactionCity = transaction.city;           // Update the customer's last transaction city.
+        behaviorState.lastDevice = transaction.deviceId;                // Update the customer's last transaction device.
+        behaviorState.lastAmount = transaction.amount;                  // Update the customer's last transaction amount.
+        behaviorState.transactionCount++;                               // Increment the customer's lifetime transaction count.
+        behaviorState.totalTransactionAmount += transaction.amount;     // Add the current amount to the customer's lifetime transaction amount.
 
+        // Persist the updated customer behavior state in Flink.
         customerState.update(behaviorState);
 
+        // Emit the completed fraud result to downstream operators.
         out.collect(result);
     }
 
-    private boolean matchesRule(
-            FraudRule rule,
-            EnrichedTransaction transaction,
-            int velocityCount,
-            boolean impossibleTravel) {
 
+    // Determine whether a transaction matches the conditions of a specific fraud rule.
+    private boolean matchesRule(FraudRule rule, EnrichedTransaction transaction, int velocityCount, boolean impossibleTravel) {
+        // Reject the rule when no rule type is defined.
         if (rule.ruleType == null) {
             return false;
         }
 
+        // Select the fraud detection logic based on the rule type.
         switch (rule.ruleType) {
+            // Check whether the transaction amount exceeds the configured threshold.
             case "HIGH_AMOUNT":
-                return rule.threshold != null &&
-                        transaction.amount >= rule.threshold;
+                return rule.threshold != null && transaction.amount >= rule.threshold;
 
+            // Check whether the transaction uses a newly detected device.
             case "NEW_DEVICE":
                 return transaction.isNewDevice;
 
+            // Check whether the transaction occurred during nighttime.
             case "NIGHT_TRANSACTION":
                 return transaction.isNightTransaction;
 
+            // Check whether the number of recent transactions exceeds the configured limit.
             case "VELOCITY":
-                return rule.maxTransactions != null &&
-                        velocityCount > rule.maxTransactions;
+                return rule.maxTransactions != null && velocityCount > rule.maxTransactions;
 
+            // Check whether the customer's travel between transactions is impossible.
             case "IMPOSSIBLE_TRAVEL":
                 return impossibleTravel;
 
+            // Check whether the transaction occurred in a foreign country.
             case "FOREIGN_TRANSACTION":
                 return transaction.isForeignTransaction;
 
+            // Check whether the transaction occurred at a new location.
             case "NEW_LOCATION":
                 return transaction.isNewLocation;
 
+            // Reject unknown rule types by default.
             default:
                 return false;
         }
     }
 
+
+    // Extract the transaction timestamp as epoch milliseconds.
     private long transactionTimestamp(EnrichedTransaction transaction) {
+        // Attempt to parse the transaction timestamp.
         try {
+            // Convert the ISO-8601 timestamp into epoch milliseconds.
             return Instant.parse(transaction.timestamp).toEpochMilli();
+
+        // Handle invalid or missing timestamp values.
         } catch (Exception e) {
+            // Fall back to the current system time when parsing fails.
             return System.currentTimeMillis();
         }
     }
 
-    private double estimateDistance(
-            String previousCity,
-            String currentCity) {
 
+    // Estimate the distance between two transaction cities.
+    private double estimateDistance(String previousCity, String currentCity) {
+        // Return zero when both transactions occurred in the same city.
         if (previousCity.equalsIgnoreCase(currentCity)) {
             return 0.0;
         }
 
+        // Use a fixed 1000 km estimate when the cities are different.
         return 1000.0;
     }
 
-    public static class TransactionHistory {
-        public long timestamp;
-        public double amount;
 
+    // Define the data structure used to store one transaction in the history state.
+    public static class TransactionHistory {
+        public long timestamp;  // Store the transaction timestamp in epoch milliseconds.
+        public double amount;   // Store the transaction amount.
+
+        // Provide an empty constructor required by Flink's POJO serialization.
         public TransactionHistory() {}
 
+        // Create a transaction history entry with timestamp and amount.
         public TransactionHistory(long timestamp, double amount) {
-            this.timestamp = timestamp;
-            this.amount = amount;
+            this.timestamp = timestamp;     // Store the transaction timestamp.
+            this.amount = amount;           // Store the transaction amount.
         }
     }
 }
