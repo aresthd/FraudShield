@@ -1,8 +1,9 @@
 # ADDITIONAL FILES
-
 /docs/prompt*.md
 /docs/to-do*
 prompt*
+/temporary
+/temp
 
 # JAVA
 

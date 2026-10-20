@@ -2,30 +2,32 @@
 
 package com.flink.engine;
 
-import com.flink.common.Parameters;
-import com.flink.engine.model.EnrichedTransaction;
-import com.flink.engine.model.FraudAlert;
-import com.flink.engine.model.FraudResult;
-import com.flink.engine.model.FraudRule;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
+import java.time.Instant;
+
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.core.execution.CheckpointingMode;
-import java.time.Duration;
-import java.time.Instant;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.flink.common.Parameters;
+import com.flink.engine.model.EnrichedTransaction;
+import com.flink.engine.model.FraudAlert;
+import com.flink.engine.model.FraudResult;
+import com.flink.engine.model.FraudRule;
 
 public class StatefulFraudEngine {
     // Create one reusable Jackson ObjectMapper for JSON conversion.
@@ -122,62 +124,83 @@ public class StatefulFraudEngine {
 
         // Serialize fraud results into JSON and send them to the result Kafka topic.
         fraudResults
-            .map(value -> MAPPER.writeValueAsString(value))
-            .sinkTo(createKafkaSink(kafkaServer, resultTopic))
-            .name("Kafka Fraud Results Sink")
-            .uid("kafka-fraud-results-sink");
+            .map(value -> MAPPER.writeValueAsString(value))         // Convert each FraudResult object into a JSON string.
+            .sinkTo(createKafkaSink(kafkaServer, resultTopic))      // Send serialized fraud results to Kafka.
+            .name("Kafka Fraud Results Sink")                       // Assign a readable name to the fraud result sink.
+            .uid("kafka-fraud-results-sink");                       // Assign a stable UID to the fraud result sink.
 
+        // Serialize fraud alerts into JSON and send them to the alert Kafka topic.
         fraudAlerts
-            .map(value -> MAPPER.writeValueAsString(value))
-            .sinkTo(createKafkaSink(kafkaServer, alertTopic))
-            .name("Kafka Fraud Alerts Sink")
-            .uid("kafka-fraud-alerts-sink");
+            .map(value -> MAPPER.writeValueAsString(value))         // Convert each FraudAlert object into a JSON string.
+            .sinkTo(createKafkaSink(kafkaServer, alertTopic))       // Send serialized fraud alerts to Kafka.
+            .name("Kafka Fraud Alerts Sink")                        // Assign a readable name to the fraud alert sink.
+            .uid("kafka-fraud-alerts-sink");                        // Assign a stable UID to the fraud alert sink.
 
+        // Build and start the Flink job with the configured job name.
         env.execute(jobName);
     }
 
+    
+    // Create a Kafka sink configured for a specific Kafka topic.
     private static KafkaSink<String> createKafkaSink(String kafkaServer, String topic) {
+        // Configure and build the Kafka sink.
         return KafkaSink.<String>builder()
-                .setBootstrapServers(kafkaServer)
-                .setRecordSerializer(
-                        KafkaRecordSerializationSchema.builder()
-                                .setTopic(topic)
-                                .setValueSerializationSchema(new SimpleStringSchema())
-                                .build())
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-                .build();
+            .setBootstrapServers(kafkaServer)                                           // Configure the Kafka bootstrap server.
+            .setRecordSerializer(                                                       // Configure how records are serialized before being sent to Kafka.
+                    KafkaRecordSerializationSchema.<String>builder()                    // Create the Kafka record serialization schema.
+                            .setTopic(topic)                                            // Set the destination Kafka topic.
+                            .setValueSerializationSchema(new SimpleStringSchema())      // Serialize the Kafka value as a string.
+                            .build())                                                   // Build the record serialization schema.
+            .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)                      // Configure the sink to provide at-least-once delivery semantics.
+            .build();                                                                   // Build the Kafka sink.
     }
     
+    
+    // Configure Flink checkpointing based on application parameters.
     private static void configureCheckpoint(StreamExecutionEnvironment env, Parameters params) {
-        boolean enabled = params.getBoolean("checkpoint.enabled");
+        boolean enabled = params.getBoolean("checkpoint.enabled");          // Read whether checkpointing is enabled.
+
+        // Skip checkpoint configuration when checkpointing is disabled.
         if (!enabled) return;
 
-        long interval = params.getLong("checkpoint.interval.ms");
-        long timeout = params.getLong("checkpoint.timeout.ms");
-        long minPause = params.getLong("checkpoint.min.pause.ms");
-        int maxConcurrent = params.getInt("checkpoint.max.concurrent");
+        long interval = params.getLong("checkpoint.interval.ms");           // Read the checkpoint interval from configuration.
+        long timeout = params.getLong("checkpoint.timeout.ms");             // Read the maximum checkpoint execution time.
+        long minPause = params.getLong("checkpoint.min.pause.ms");          // Read the minimum pause between checkpoints.
+        int maxConcurrent = params.getInt("checkpoint.max.concurrent");     // Read the maximum number of concurrent checkpoints.
 
-        env.enableCheckpointing(interval, CheckpointingMode.EXACTLY_ONCE);
-        env.getCheckpointConfig().setCheckpointTimeout(timeout);
-        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);
-        env.getCheckpointConfig().setMaxConcurrentCheckpoints(maxConcurrent);
+        env.enableCheckpointing(interval, CheckpointingMode.EXACTLY_ONCE);      // Enable periodic checkpoints using exactly-once checkpointing mode.
+        env.getCheckpointConfig().setCheckpointTimeout(timeout);                // Configure the maximum time allowed for a checkpoint to complete.
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);      // Configure the minimum pause between completed checkpoints.
+        env.getCheckpointConfig().setMaxConcurrentCheckpoints(maxConcurrent);   // Configure the maximum number of checkpoints allowed to run concurrently.
 
         // Configuration config = new Configuration();
         // config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
         // config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
         // env.configure(config);
 
+        // Create a Flink configuration object for checkpoint storage settings.
         Configuration parameters = new Configuration();
-        parameters.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
-        parameters.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, params.get("checkpoint.path"));
+        parameters.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");                               // Configure the checkpoint storage type as filesystem.
+        parameters.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, params.get("checkpoint.path"));      // Configure the filesystem path where checkpoints will be stored.
+
+        // Apply the checkpoint storage configuration to the Flink environment.
         env.configure(parameters);
     }
     
+
+    // Extract the event timestamp from an enriched transaction JSON message.
     private static long extractTimestamp(String json) {
+        // Attempt to parse the transaction timestamp from JSON.
         try {
+            // Deserialize the JSON into an EnrichedTransaction object.
             EnrichedTransaction transaction = MAPPER.readValue(json, EnrichedTransaction.class);
+
+            // Convert the transaction timestamp into epoch milliseconds.
             return Instant.parse(transaction.timestamp).toEpochMilli();
+
+        // Handle invalid or missing transaction timestamps.
         } catch (Exception e) {
+            // Fall back to the current system time when timestamp extraction fails.
             return System.currentTimeMillis();
         }
     }
