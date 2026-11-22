@@ -10,21 +10,22 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
 // Define the data model representing a fraud detection rule.
 public class FraudRule implements Serializable {
-    public String ruleId;               // Store the unique identifier of the fraud rule.
-    public String ruleName;             // Store the human-readable name of the fraud rule.
-    public String ruleType;             // Store the type or category of the fraud rule.
-    public String description;          // Store the description explaining what the rule detects.
-    public Double threshold;            // Store the threshold value used by the rule.
-    public Integer windowSeconds;       // Store the time window in seconds used by the rule.
-    public Integer maxTransactions;     // Store the maximum number of transactions allowed within the configured window.
-    public Integer score;               // Store the score assigned when the rule is triggered.
-    public String severity;             // Store the severity level assigned to the triggered rule.
-    public Boolean enabled;             // Indicate whether the rule is currently enabled.
-    public String action;               // Store the action that should be performed when the rule is triggered.
-    public Integer version;             // Store the version number of the fraud rule.
-    public String updatedAt;            // Store the timestamp when the rule was last updated.
-    public String updatedBy;            // Store the identifier of the user or system that updated the rule.
-    public String operation;            // Store the operation applied to the rule, such as INSERT, UPDATE, or DELETE.
+    // Define the fields to store the fraud detection rule information.
+    public String ruleId;
+    public String ruleName;
+    public String ruleType;
+    public String description;
+    public Double threshold;
+    public Integer windowSeconds;
+    public Integer maxTransactions;
+    public Integer score;
+    public String severity;
+    public Boolean enabled;
+    public String action;
+    public Integer version;
+    public String updatedAt;
+    public String updatedBy;
+    public String operation;
 
     // Provide an empty constructor for object creation and serialization.
     public FraudRule() {}

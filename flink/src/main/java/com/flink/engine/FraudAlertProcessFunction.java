@@ -22,29 +22,22 @@ public class FraudAlertProcessFunction extends ProcessFunction<FraudResult, Frau
         FraudAlert alert = new FraudAlert();
 
         // Fill the fraud_alert data
-        alert.alertId = "ALT-" + UUID.randomUUID();                             // Generate a unique identifier for the fraud alert.
-        alert.resultId = result.resultId;                                       // Link the alert to the original fraud detection result.
-        alert.transactionId = result.transactionId;                             // Copy the transaction identifier into the alert.
-        alert.customerId = result.customerId;                                   // Copy the customer identifier into the alert.
-        alert.severity = "FRAUD".equals(result.status) ? "CRITICAL" : "MEDIUM"; // Assign CRITICAL severity to FRAUD results and MEDIUM severity to other non-normal results.
-        alert.fraudScore = result.fraudScore;                                   // Copy the fraud score calculated by the fraud engine.
-        alert.status = result.status;                                           // Copy the fraud detection status into the alert.
+        alert.alertId = "ALT-" + UUID.randomUUID();
+        alert.resultId = result.resultId;
+        alert.transactionId = result.transactionId;
+        alert.customerId = result.customerId;
+        alert.severity = "FRAUD".equals(result.status) ? "CRITICAL" : "MEDIUM";
+        alert.fraudScore = result.fraudScore;
+        alert.status = result.status;
 
         // Determine the alert type based on the number of fraud rules triggered.
-        alert.alertType = result.triggeredRules.size() > 1
-                        // Use MULTI_RULE_FRAUD when multiple rules were triggered.
-                        ? "MULTI_RULE_FRAUD"
-
-                        // Use SUSPICIOUS_TRANSACTION when no specific rule is available.
-                        : result.triggeredRules.isEmpty()
-
-                        // Use the triggered rule type when exactly one rule was triggered.
-                        ? "SUSPICIOUS_TRANSACTION"
+        alert.alertType = result.triggeredRules.size() > 1 ? "MULTI_RULE_FRAUD"
+                        : result.triggeredRules.isEmpty() ? "SUSPICIOUS_TRANSACTION"
                         : result.triggeredRules.get(0);
 
-        alert.triggeredRules = result.triggeredRules;                           // Copy the list of rules that triggered the fraud detection.
-        alert.message = "Multiple suspicious transaction patterns detected";    // Set a human-readable message describing the alert.
-        alert.createdAt = Instant.now().toString();                             // Record the timestamp when the alert is generated.
+        alert.triggeredRules = result.triggeredRules;
+        alert.message = "Multiple suspicious transaction patterns detected";
+        alert.createdAt = Instant.now().toString();
 
         // Emit the generated FraudAlert to the downstream Kafka sink.
         out.collect(alert);

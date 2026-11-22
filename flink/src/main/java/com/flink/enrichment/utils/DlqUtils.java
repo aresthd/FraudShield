@@ -23,16 +23,16 @@ public final class DlqUtils {
             ObjectNode dlq = MAPPER.createObjectNode();
 
             // Write the DLQ data
-            dlq.put("dlq_id", "DLQ-" + System.currentTimeMillis());                             // Generate a unique identifier for the DLQ record using the current timestamp.
-            dlq.put("source_topic", SOURCE_TOPIC);                                              // Store the Kafka topic where the original transaction was received.
-            dlq.put("source_partition", -1);                                                    // Set the source Kafka partition when the partition information is unavailable.
-            dlq.put("source_offset", -1L);                                                      // Set the source Kafka offset when the offset information is unavailable.
-            dlq.put("event_key",transaction.customerId == null ? "" : transaction.customerId);  // Store the customer ID as the event key or an empty string when the customer ID is unavailable.
-            dlq.put("error_type", transaction.errorType);                                       // Store the validation error type generated during transaction processing.
-            dlq.put("error_message", transaction.errorMessage == null ? "Unknown validation error" : transaction.errorMessage); // Store the validation error message or use a default message when it is unavailable.
-            dlq.put("failed_at_stage", "ENRICHMENT");                                           // Identify the Flink pipeline stage where the transaction failed.
-            dlq.put("retry_count", 0);                                                          // Initialize the retry counter because this is the first DLQ record.
-            dlq.put("timestamp", Instant.now().toString());                                     // Store the timestamp when the DLQ message is created.
+            dlq.put("dlq_id", "DLQ-" + System.currentTimeMillis());
+            dlq.put("source_topic", SOURCE_TOPIC);
+            dlq.put("source_partition", -1);
+            dlq.put("source_offset", -1L);
+            dlq.put("event_key",transaction.customerId == null ? "" : transaction.customerId);
+            dlq.put("error_type", transaction.errorType);
+            dlq.put("error_message", transaction.errorMessage == null ? "Unknown validation error" : transaction.errorMessage);
+            dlq.put("failed_at_stage", "ENRICHMENT");
+            dlq.put("retry_count", 0);
+            dlq.put("timestamp", Instant.now().toString());
 
             // Try to preserve the original payload as a structured JSON object.
             try {

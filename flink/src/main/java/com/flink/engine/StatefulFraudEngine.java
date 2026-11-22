@@ -65,42 +65,43 @@ public class StatefulFraudEngine {
         
         // Create a Kafka source for enriched transactions.
         KafkaSource<String> transactionSource = KafkaSource.<String>builder()
-                        .setBootstrapServers(kafkaServer)                       // Configure the Kafka bootstrap server.
-                        .setTopics(transactionTopic)                            // Configure the transaction input topic.
-                        .setGroupId(consumerGroup)                              // Configure the Kafka consumer group.
-                        .setStartingOffsets(OffsetsInitializer.earliest())      // Start reading from the earliest available Kafka offset.
-                        .setValueOnlyDeserializer(new SimpleStringSchema())     // Deserialize Kafka message values as strings.
-                        .build();                                               // Build the transaction Kafka source.
+                        .setBootstrapServers(kafkaServer)
+                        .setTopics(transactionTopic)
+                        .setGroupId(consumerGroup)
+                        .setStartingOffsets(OffsetsInitializer.earliest())
+                        .setValueOnlyDeserializer(new SimpleStringSchema())
+                        .build();
 
         // Create a separate Kafka source for fraud rules.
         KafkaSource<String> ruleSource = KafkaSource.<String>builder()
-                        .setBootstrapServers(kafkaServer)                       // Configure the Kafka bootstrap server for the rules source.
-                        .setTopics(rulesTopic)                                  // Configure the fraud rules input topic.
-                        .setGroupId("fraud-rules")                              // Use a dedicated consumer group for fraud rules.
-                        .setStartingOffsets(OffsetsInitializer.earliest())      // Start reading fraud rules from the earliest available offset.
-                        .setValueOnlyDeserializer(new SimpleStringSchema())     // Deserialize Kafka rule messages as strings.
-                        .build();                                               // Build the fraud rules Kafka source.
+                        .setBootstrapServers(kafkaServer)
+                        .setTopics(rulesTopic)
+                        .setGroupId("fraud-rules")
+                        .setStartingOffsets(OffsetsInitializer.earliest())
+                        .setValueOnlyDeserializer(new SimpleStringSchema())
+                        .build();
                         
         // Create the transaction stream from the Kafka source with event-time watermarks.
         DataStream<String> rawTransactions = env
-            .fromSource(transactionSource,WatermarkStrategy.<String>forBoundedOutOfOrderness(Duration.ofSeconds(watermarkDelay))    // Allow transactions to arrive out of order within the configured delay.
-            .withTimestampAssigner((value, timestamp) -> extractTimestamp(value)),                                                  // Extract the transaction event timestamp from each JSON message.
-                "Transactions Enriched Source");                                                                                    // Assign a descriptive name to the transaction source operator.
+            .fromSource(transactionSource,WatermarkStrategy.<String>forBoundedOutOfOrderness(Duration.ofSeconds(watermarkDelay))
+                .withTimestampAssigner((value, timestamp) -> extractTimestamp(value)),
+                "Transactions Enriched Source"
+            );
 
         // Create the fraud rules stream without event-time watermarks.
         DataStream<String> rawRules = env.fromSource(ruleSource, WatermarkStrategy.noWatermarks(), "Fraud Rules Source");
 
         // Convert each transaction JSON string into an EnrichedTransaction object.
         DataStream<EnrichedTransaction> transactions = rawTransactions
-            .map(value -> MAPPER.readValue(value, EnrichedTransaction.class))   // Deserialize the Kafka JSON value into an EnrichedTransaction.
-            .returns(Types.POJO(EnrichedTransaction.class))                     // Tell Flink that the resulting objects are EnrichedTransaction POJOs.
-            .name("Parse Enriched Transactions");                               // Assign a descriptive name to the parsing operator.
+            .map(value -> MAPPER.readValue(value, EnrichedTransaction.class))
+            .returns(Types.POJO(EnrichedTransaction.class))
+            .name("Parse Enriched Transactions");
 
         // Convert each fraud rule JSON string into a FraudRule object.
         DataStream<FraudRule> rules = rawRules
-            .map(value -> MAPPER.readValue(value,FraudRule.class))      // Deserialize the Kafka JSON value into a FraudRule object.
-            .returns(Types.POJO(FraudRule.class))                       // Tell Flink that the resulting objects are FraudRule POJOs.
-            .name("Parse Fraud Rules");                                 // Assign a descriptive name to the rule parsing operator.
+            .map(value -> MAPPER.readValue(value,FraudRule.class))
+            .returns(Types.POJO(FraudRule.class))
+            .name("Parse Fraud Rules");
 
         // Define the Broadcast State structure used to store fraud rules by rule ID.
         MapStateDescriptor<String, FraudRule> ruleStateDescriptor = new MapStateDescriptor<>("fraud-rules", Types.STRING, Types.POJO(FraudRule.class));
@@ -110,31 +111,31 @@ public class StatefulFraudEngine {
         
         // Key transactions by customer ID and connect them with the broadcast fraud rules.
         SingleOutputStreamOperator<FraudResult> fraudResults = transactions
-            .keyBy(transaction -> transaction.customerId)               // Partition transactions so each customer is processed by the same keyed state.
-            .connect(broadcastRules)                                    // Connect the keyed transaction stream with the broadcast rule stream.
-            .process(new FraudProcessFunction(ruleStateDescriptor))     // Apply the stateful fraud detection logic.
-            .name("Stateful Fraud Engine")                              // Assign a readable name to the fraud engine operator.
-            .uid("stateful-fraud-engine");                              // Assign a stable UID for Flink state and savepoint compatibility.
+            .keyBy(transaction -> transaction.customerId)
+            .connect(broadcastRules)
+            .process(new FraudProcessFunction(ruleStateDescriptor))
+            .name("Stateful Fraud Engine")
+            .uid("stateful-fraud-engine");
 
         // Convert non-normal fraud results into fraud alerts.
         SingleOutputStreamOperator<FraudAlert> fraudAlerts = fraudResults
-            .process(new FraudAlertProcessFunction())   // Apply the alert generation process function.
-            .name("Fraud Alert Generator")              // Assign a readable name to the alert generator operator.
-            .uid("fraud-alert-generator");              // Assign a stable UID to the alert generator operator.
+            .process(new FraudAlertProcessFunction())
+            .name("Fraud Alert Generator")
+            .uid("fraud-alert-generator");
 
         // Serialize fraud results into JSON and send them to the result Kafka topic.
         fraudResults
-            .map(value -> MAPPER.writeValueAsString(value))         // Convert each FraudResult object into a JSON string.
-            .sinkTo(createKafkaSink(kafkaServer, resultTopic))      // Send serialized fraud results to Kafka.
-            .name("Kafka Fraud Results Sink")                       // Assign a readable name to the fraud result sink.
-            .uid("kafka-fraud-results-sink");                       // Assign a stable UID to the fraud result sink.
+            .map(value -> MAPPER.writeValueAsString(value))
+            .sinkTo(createKafkaSink(kafkaServer, resultTopic))
+            .name("Kafka Fraud Results Sink")
+            .uid("kafka-fraud-results-sink");
 
         // Serialize fraud alerts into JSON and send them to the alert Kafka topic.
         fraudAlerts
-            .map(value -> MAPPER.writeValueAsString(value))         // Convert each FraudAlert object into a JSON string.
-            .sinkTo(createKafkaSink(kafkaServer, alertTopic))       // Send serialized fraud alerts to Kafka.
-            .name("Kafka Fraud Alerts Sink")                        // Assign a readable name to the fraud alert sink.
-            .uid("kafka-fraud-alerts-sink");                        // Assign a stable UID to the fraud alert sink.
+            .map(value -> MAPPER.writeValueAsString(value))
+            .sinkTo(createKafkaSink(kafkaServer, alertTopic))
+            .name("Kafka Fraud Alerts Sink")
+            .uid("kafka-fraud-alerts-sink");
 
         // Build and start the Flink job with the configured job name.
         env.execute(jobName);
@@ -145,43 +146,46 @@ public class StatefulFraudEngine {
     private static KafkaSink<String> createKafkaSink(String kafkaServer, String topic) {
         // Configure and build the Kafka sink.
         return KafkaSink.<String>builder()
-            .setBootstrapServers(kafkaServer)                                           // Configure the Kafka bootstrap server.
-            .setRecordSerializer(                                                       // Configure how records are serialized before being sent to Kafka.
-                    KafkaRecordSerializationSchema.<String>builder()                    // Create the Kafka record serialization schema.
-                            .setTopic(topic)                                            // Set the destination Kafka topic.
-                            .setValueSerializationSchema(new SimpleStringSchema())      // Serialize the Kafka value as a string.
-                            .build())                                                   // Build the record serialization schema.
-            .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)                      // Configure the sink to provide at-least-once delivery semantics.
-            .build();                                                                   // Build the Kafka sink.
+            .setBootstrapServers(kafkaServer)
+            .setRecordSerializer(
+                    KafkaRecordSerializationSchema.<String>builder()
+                            .setTopic(topic)
+                            .setValueSerializationSchema(new SimpleStringSchema())
+                            .build())
+            .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+            .build();
     }
     
     
     // Configure Flink checkpointing based on application parameters.
     private static void configureCheckpoint(StreamExecutionEnvironment env, Parameters params) {
-        boolean enabled = params.getBoolean("checkpoint.enabled");          // Read whether checkpointing is enabled.
+        // Read whether checkpointing is enabled.
+        boolean enabled = params.getBoolean("checkpoint.enabled");          
 
         // Skip checkpoint configuration when checkpointing is disabled.
         if (!enabled) return;
 
-        long interval = params.getLong("checkpoint.interval.ms");           // Read the checkpoint interval from configuration.
-        long timeout = params.getLong("checkpoint.timeout.ms");             // Read the maximum checkpoint execution time.
-        long minPause = params.getLong("checkpoint.min.pause.ms");          // Read the minimum pause between checkpoints.
-        int maxConcurrent = params.getInt("checkpoint.max.concurrent");     // Read the maximum number of concurrent checkpoints.
+        // Read checkpoint parameters from the configuration
+        long interval = params.getLong("checkpoint.interval.ms");
+        long timeout = params.getLong("checkpoint.timeout.ms");
+        long minPause = params.getLong("checkpoint.min.pause.ms");
+        int maxConcurrent = params.getInt("checkpoint.max.concurrent");
 
-        env.enableCheckpointing(interval, CheckpointingMode.EXACTLY_ONCE);      // Enable periodic checkpoints using exactly-once checkpointing mode.
-        env.getCheckpointConfig().setCheckpointTimeout(timeout);                // Configure the maximum time allowed for a checkpoint to complete.
-        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);      // Configure the minimum pause between completed checkpoints.
-        env.getCheckpointConfig().setMaxConcurrentCheckpoints(maxConcurrent);   // Configure the maximum number of checkpoints allowed to run concurrently.
+        // Set checkpoint configuration in the Flink execution environment
+        env.enableCheckpointing(interval, CheckpointingMode.EXACTLY_ONCE);
+        env.getCheckpointConfig().setCheckpointTimeout(timeout);
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);
+        env.getCheckpointConfig().setMaxConcurrentCheckpoints(maxConcurrent);
 
         // Configuration config = new Configuration();
         // config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
         // config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
         // env.configure(config);
 
-        // Create a Flink configuration object for checkpoint storage settings.
+        // Create a Flink configuration object for checkpoint storage settings
         Configuration parameters = new Configuration();
-        parameters.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");                               // Configure the checkpoint storage type as filesystem.
-        parameters.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, params.get("checkpoint.path"));      // Configure the filesystem path where checkpoints will be stored.
+        parameters.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+        parameters.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, params.get("checkpoint.path"));
 
         // Apply the checkpoint storage configuration to the Flink environment.
         env.configure(parameters);

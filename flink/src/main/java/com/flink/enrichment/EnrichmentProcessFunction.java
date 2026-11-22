@@ -14,7 +14,6 @@ import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
 public class EnrichmentProcessFunction extends KeyedProcessFunction<String, RawTransaction, String> {
-
 	// Create a reusable Jackson ObjectMapper for converting enriched transactions into JSON.
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -59,73 +58,59 @@ public class EnrichmentProcessFunction extends KeyedProcessFunction<String, RawT
             state = new CustomerState();
         }
 
-        // Determine whether the transaction uses a device that has not been seen previously by the customer.
+        // Determine enrichment features based on the current transaction and the customer's previous transaction history.
         boolean isNewDevice = EnrichmentUtils.isNewDevice(state.lastDeviceId, transaction.deviceId);
-
-        // Determine whether the transaction originates from a location that has not been seen previously by the customer.
         boolean isNewLocation = EnrichmentUtils.isNewLocation(state.lastCity, transaction.city);
-
-        // Determine whether the transaction occurred during the configured night-time period.
         boolean isNightTransaction = EnrichmentUtils.isNightTransaction(transaction.eventTimestamp);
-
-        // Determine whether the transaction occurred in a foreign country.
         boolean isForeignTransaction = EnrichmentUtils.isForeignTransaction(transaction.country);
-
-        // Determine whether the transaction amount exceeds the configured high-amount threshold.
         boolean isHighAmount = EnrichmentUtils.isHighAmount(transaction.amount, HIGH_AMOUNT_THRESHOLD);
-
-        // Determine the risk level associated with the transaction merchant.
         String merchantRiskLevel = EnrichmentUtils.determineMerchantRisk(transaction);
-
-        // Determine the customer's account age in days.
         int accountAgeDays = EnrichmentUtils.determineAccountAge(transaction.customerId);
-
-        // Determine the customer's risk level based on the account age.
         String customerRiskLevel = EnrichmentUtils.determineCustomerRisk(accountAgeDays);
 
         // Create a new JSON object that will contain the enriched transaction data.
 		ObjectNode enriched = MAPPER.createObjectNode();
 
 		// Fill new JSON object with the enriched transaction data.
-        enriched.put("transaction_id", transaction.transactionId);			// Add the original transaction ID to the enriched transaction.
-        enriched.put("customer_id", transaction.customerId);				// Add the original customer ID to the enriched transaction.
-        enriched.put("account_id", transaction.accountId);					// Add the original account ID to the enriched transaction.
-        enriched.put("transaction_type", transaction.transactionType);		// Add the original transaction type to the enriched transaction.
-        enriched.put("amount", transaction.amount);							// Add the original transaction amount to the enriched transaction.
-        enriched.put("currency", transaction.currency);						// Add the original transaction currency to the enriched transaction.
-        enriched.put("merchant_id", transaction.merchantId);				// Add the original merchant ID to the enriched transaction.
-        enriched.put("merchant_name", transaction.merchantName);			// Add the original merchant name to the enriched transaction.
-        enriched.put("merchant_category", transaction.merchantCategory);	// Add the original merchant category to the enriched transaction.
-        enriched.put("payment_method", transaction.paymentMethod);			// Add the original payment method to the enriched transaction.
-        enriched.put("device_id", transaction.deviceId);					// Add the original device ID to the enriched transaction.
-        enriched.put("ip_address", transaction.ipAddress);					// Add the original IP address to the enriched transaction.
-        enriched.put("city", transaction.city);								// Add the original transaction city to the enriched transaction.
-        enriched.put("country", transaction.country);						// Add the original transaction country to the enriched transaction.
-        enriched.put("latitude", transaction.latitude);						// Add the original latitude coordinate to the enriched transaction.
-        enriched.put("longitude", transaction.longitude);					// Add the original longitude coordinate to the enriched transaction.
-        enriched.put("channel", transaction.channel);						// Add the original transaction channel to the enriched transaction.
-        enriched.put("account_age_days", accountAgeDays);					// Add the calculated customer account age to the enriched transaction.
-        enriched.put("customer_risk_level", customerRiskLevel);				// Add the calculated customer risk level to the enriched transaction.
-        enriched.put("merchant_risk_level", merchantRiskLevel);				// Add the calculated merchant risk level to the enriched transaction.
-        enriched.put("is_new_device", isNewDevice);							// Add whether the transaction uses a new device for this customer.
-        enriched.put("is_new_location", isNewLocation);						// Add whether the transaction occurs in a new location for this customer.
-        enriched.put("is_foreign_transaction", isForeignTransaction);		// Add whether the transaction occurs in a foreign country.
-        enriched.put("is_night_transaction", isNightTransaction);			// Add whether the transaction occurs during night-time.
-        enriched.put("is_high_amount", isHighAmount);						// Add whether the transaction amount exceeds the high-amount threshold.
+        enriched.put("transaction_id", transaction.transactionId);
+        enriched.put("customer_id", transaction.customerId);
+        enriched.put("account_id", transaction.accountId);
+        enriched.put("transaction_type", transaction.transactionType);
+        enriched.put("amount", transaction.amount);
+        enriched.put("currency", transaction.currency);
+        enriched.put("merchant_id", transaction.merchantId);
+        enriched.put("merchant_name", transaction.merchantName);
+        enriched.put("merchant_category", transaction.merchantCategory);
+        enriched.put("payment_method", transaction.paymentMethod);
+        enriched.put("device_id", transaction.deviceId);
+        enriched.put("ip_address", transaction.ipAddress);
+        enriched.put("city", transaction.city);
+        enriched.put("country", transaction.country);
+        enriched.put("latitude", transaction.latitude);
+        enriched.put("longitude", transaction.longitude);
+        enriched.put("channel", transaction.channel);
+        enriched.put("account_age_days", accountAgeDays);
+        enriched.put("customer_risk_level", customerRiskLevel);
+        enriched.put("merchant_risk_level", merchantRiskLevel);
+        enriched.put("is_new_device", isNewDevice);
+        enriched.put("is_new_location", isNewLocation);
+        enriched.put("is_foreign_transaction", isForeignTransaction);
+        enriched.put("is_night_transaction", isNightTransaction);
+        enriched.put("is_high_amount", isHighAmount);
 
 		// Convert event timestamp
-        enriched.put("event_date", EnrichmentUtils.eventDate(transaction.eventTimestamp));		        		// Convert the event timestamp into a readable event date.
-        enriched.put("event_hour", EnrichmentUtils.eventHour(transaction.eventTimestamp));						// Extract the hour from the transaction event timestamp.
-		enriched.put("timestamp", java.time.Instant.ofEpochMilli(transaction.eventTimestamp).toString()); // Convert the event timestamp from milliseconds into an ISO-8601 timestamp string.
+        enriched.put("event_date", EnrichmentUtils.eventDate(transaction.eventTimestamp));
+        enriched.put("event_hour", EnrichmentUtils.eventHour(transaction.eventTimestamp));
+		enriched.put("timestamp", java.time.Instant.ofEpochMilli(transaction.eventTimestamp).toString());
 
 		// Record the current processing time when the transaction is enriched.
         enriched.put("processing_time", java.time.Instant.now().toString());
 
 		// Update the customer's last data
-        state.lastDeviceId = transaction.deviceId;							// Update the customer's last known device with the current transaction device.
-        state.lastCity = transaction.city;									// Update the customer's last known city with the current transaction city.
-        state.lastTransactionTimestamp = transaction.eventTimestamp;		// Update the customer's last transaction timestamp.
-        state.lastAmount = transaction.amount;								// Update the customer's last transaction amount.
+        state.lastDeviceId = transaction.deviceId;
+        state.lastCity = transaction.city;
+        state.lastTransactionTimestamp = transaction.eventTimestamp;
+        state.lastAmount = transaction.amount;
 
         // Persist the updated customer state so it can be used by the next transaction for this customer.
         customerState.update(state);

@@ -11,10 +11,8 @@ public final class FraudDetectionUtils {
         // Define the Earth's radius in kilometers for the distance calculation.
         final double earthRadiusKm = 6371.0;
 
-        // Convert the difference between the two latitudes from degrees to radians.
+        // Convert latitude and longitude from degrees to radians
         double latDistance = Math.toRadians(latitude2 - latitude1);
-
-        // Convert the difference between the two longitudes from degrees to radians.
         double lonDistance = Math.toRadians(longitude2 - longitude1);
 
         // Calculate the first part of the Haversine formula using latitude differences.

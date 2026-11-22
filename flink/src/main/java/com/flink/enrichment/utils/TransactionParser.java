@@ -24,24 +24,24 @@ public final class TransactionParser {
             JsonNode node = MAPPER.readTree(json);
 
             // Extract raw transaction data
-            transaction.transactionId = text(node, "transaction_id"); // Extract the transaction ID from the JSON payload.
-            transaction.customerId = text(node, "customer_id"); // Extract the customer ID from the JSON payload.
-            transaction.accountId = text(node, "account_id"); // Extract the account ID from the JSON payload.
-            transaction.transactionType = text(node, "transaction_type"); // Extract the transaction type from the JSON payload.
-            transaction.amount = node.has("amount") ? node.get("amount").asDouble() : 0.0; // Extract the transaction amount or use 0.0 when the field is missing.
-            transaction.currency = text(node, "currency"); // Extract the transaction currency from the JSON payload.
-            transaction.merchantId = text(node, "merchant_id"); // Extract the merchant ID from the JSON payload.
-            transaction.merchantName = text(node, "merchant_name"); // Extract the merchant name from the JSON payload.
-            transaction.merchantCategory = text(node, "merchant_category"); // Extract the merchant category from the JSON payload.
-            transaction.paymentMethod = text(node, "payment_method"); // Extract the payment method from the JSON payload.
-            transaction.deviceId = text(node, "device_id"); // Extract the device ID from the JSON payload.
-            transaction.ipAddress = text(node, "ip_address"); // Extract the IP address from the JSON payload.
-            transaction.city = text(node, "city"); // Extract the transaction city from the JSON payload.
-            transaction.country = text(node, "country"); // Extract the transaction country from the JSON payload.
-            transaction.latitude = node.has("latitude") ? node.get("latitude").asDouble() : 0.0; // Extract the latitude or use 0.0 when the field is missing.
-            transaction.longitude = node.has("longitude") ? node.get("longitude").asDouble() : 0.0; // Extract the longitude or use 0.0 when the field is missing.
-            transaction.channel = text(node, "channel"); // Extract the transaction channel from the JSON payload.
-            String timestamp = text(node, "timestamp"); // Extract the transaction timestamp as a string from the JSON payload.
+            transaction.transactionId = text(node, "transaction_id");
+            transaction.customerId = text(node, "customer_id");
+            transaction.accountId = text(node, "account_id");
+            transaction.transactionType = text(node, "transaction_type");
+            transaction.amount = node.has("amount") ? node.get("amount").asDouble() : 0.0;
+            transaction.currency = text(node, "currency");
+            transaction.merchantId = text(node, "merchant_id");
+            transaction.merchantName = text(node, "merchant_name");
+            transaction.merchantCategory = text(node, "merchant_category");
+            transaction.paymentMethod = text(node, "payment_method");
+            transaction.deviceId = text(node, "device_id");
+            transaction.ipAddress = text(node, "ip_address");
+            transaction.city = text(node, "city");
+            transaction.country = text(node, "country");
+            transaction.latitude = node.has("latitude") ? node.get("latitude").asDouble() : 0.0;
+            transaction.longitude = node.has("longitude") ? node.get("longitude").asDouble() : 0.0;
+            transaction.channel = text(node, "channel");
+            String timestamp = text(node, "timestamp");
 
             // Reject the transaction when the timestamp is missing or empty.
             if (timestamp == null || timestamp.isBlank()) {
@@ -57,7 +57,7 @@ public final class TransactionParser {
             // Mark the transaction as valid after parsing and validation succeed.
             transaction.valid = true;
 
-            // Handle JSON parsing, timestamp, or validation errors.
+        // Handle JSON parsing, timestamp, or validation errors.
         } catch (Exception e) {
             // Mark the transaction as invalid when any parsing or validation error occurs.
             transaction.valid = false;

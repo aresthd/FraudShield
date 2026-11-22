@@ -51,18 +51,18 @@ public class TransactionEnrichment {
 
 		// Build a Kafka source that reads raw transaction messages from the configured Kafka topic.
 		KafkaSource<String> source = KafkaSource.<String>builder()
-			.setBootstrapServers(kafkaServer) // Configure the Kafka broker address used by the source.
-			.setTopics(inputTopic) // Configure the Kafka topic consumed by the source.
-			.setGroupId(consumerGroup) // Configure the Kafka consumer group for offset management.
-			.setStartingOffsets(OffsetsInitializer.earliest()) // Start consuming messages from the earliest available Kafka offset.
-			.setValueOnlyDeserializer(new SimpleStringSchema()) // Deserialize Kafka message values as plain strings.
-			.build(); // Build the Kafka source configuration.
+			.setBootstrapServers(kafkaServer)
+			.setTopics(inputTopic)
+			.setGroupId(consumerGroup)
+			.setStartingOffsets(OffsetsInitializer.earliest())
+			.setValueOnlyDeserializer(new SimpleStringSchema())
+			.build();
 
 		// Create a Flink DataStream from the Kafka source without generating watermarks at this stage.
 		DataStream<String> rawStream = env.fromSource(
-			source,
-			WatermarkStrategy.noWatermarks(),
-			"Kafka Source - transactions_raw");
+			source, WatermarkStrategy.noWatermarks(),
+			"Kafka Source - transactions_raw"
+		);
 
 		// Parse raw JSON/string messages into RawTransaction objects.
 		DataStream<RawTransaction> parsedStream = rawStream
@@ -83,28 +83,23 @@ public class TransactionEnrichment {
 		// Assign event timestamps and generate watermarks to handle out-of-order transactions.
 		DataStream<RawTransaction> eventTimeStream = validStream
 			.assignTimestampsAndWatermarks(
-				WatermarkStrategy
-				// Allow transactions to arrive out of order within the configured delay.
-				.<RawTransaction>forBoundedOutOfOrderness(Duration.ofSeconds(watermarkDelay))
-
-				// Extract the event timestamp from each RawTransaction.
-				.withTimestampAssigner((transaction, timestamp) -> transaction.eventTimestamp))
+				WatermarkStrategy.<RawTransaction>forBoundedOutOfOrderness(Duration.ofSeconds(watermarkDelay))
+				.withTimestampAssigner((transaction, timestamp) -> transaction.eventTimestamp)
+			)
 			.name("Event Time & Watermark");
 
 		// Group transactions by customer so that enrichment state can be maintained per customer.
 		DataStream<String> enrichedStream = eventTimeStream
-			.keyBy(transaction -> transaction.customerId)   // Group transactions by customer_id
-			.process(new EnrichmentProcessFunction())       // Process each customer's transaction stream using the enrichment logic.
-			.name("Customer Enrichment");                   // Assign a descriptive name to the enrichment processing operator.
+			.keyBy(transaction -> transaction.customerId)
+			.process(new EnrichmentProcessFunction())
+			.name("Customer Enrichment");
 
 		// Send successfully enriched transactions to the configured Kafka output topic.
-		enrichedStream
-			.sinkTo(createKafkaSink(kafkaServer, outputTopic))
+		enrichedStream.sinkTo(createKafkaSink(kafkaServer, outputTopic))
 			.name("Kafka Sink - transactions_enriched");
 
 		// Send invalid transactions to the configured DLQ Kafka topic.
-		invalidStream
-			.sinkTo(createKafkaSink(kafkaServer, dlqTopic))
+		invalidStream.sinkTo(createKafkaSink(kafkaServer, dlqTopic))
 			.name("Kafka Sink - fraud_dlq");
 
 		// Submit and execute the complete Flink streaming job.
@@ -122,9 +117,9 @@ public class TransactionEnrichment {
 			// Configure how records are serialized and which topic receives them.
 			.setRecordSerializer(
 				KafkaRecordSerializationSchema.builder()
-				.setTopic(topic)										// Set the destination Kafka topic.
-				.setValueSerializationSchema(new SimpleStringSchema())	// Serialize the message value as a plain string.
-				.build()											// Build the record serializer configuration.
+				.setTopic(topic)
+				.setValueSerializationSchema(new SimpleStringSchema())
+				.build()
 			)
 
 			// Guarantee that each record is delivered at least once.

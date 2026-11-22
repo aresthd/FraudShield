@@ -10,12 +10,13 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
 // Define the state object used to store historical customer behavior.
 public class CustomerBehaviorState implements Serializable {
-    public Long lastTransactionTime;            // Store the timestamp of the customer's previous transaction.
-    public String lastTransactionCity;          // Store the city of the customer's previous transaction.
-    public String lastDevice;                   // Store the device used in the customer's previous transaction.
-    public Double lastAmount;                   // Store the amount of the customer's previous transaction.
-    public Long transactionCount;               // Store the total number of transactions made by the customer.
-    public Double totalTransactionAmount;       // Store the total transaction amount made by the customer.
+    // Define the fields to store the customer's previous transaction information.
+    public Long lastTransactionTime;
+    public String lastTransactionCity;
+    public String lastDevice;
+    public Double lastAmount;
+    public Long transactionCount;
+    public Double totalTransactionAmount;
 
     // Initialize the customer behavior state with default counter values.
     public CustomerBehaviorState() {
