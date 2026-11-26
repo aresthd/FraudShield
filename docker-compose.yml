@@ -1,247 +1,280 @@
 version: "2.0"
 
 networks:
-  bridge:
-    driver: bridge
+    bridge:
+        driver: bridge
 
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
-    container_name: FraudShield-zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: "${ZOOKEEPER_PORT:-32181}"
-      ZOOKEEPER_TICK_TIME: "${ZOOKEEPER_TICK_TIME:-2000}"
-    restart: unless-stopped
-    ports:
-      - "${ZOOKEEPER_PORT:-32181}:32181"
-    networks:
-      bridge:
-        aliases:
-          - zookeeper
+    zookeeper:
+        image: confluentinc/cp-zookeeper:7.6.1
+        container_name: FraudShield-zookeeper
+        environment:
+            ZOOKEEPER_CLIENT_PORT: "${ZOOKEEPER_PORT:-32181}"
+            ZOOKEEPER_TICK_TIME: "${ZOOKEEPER_TICK_TIME:-2000}"
+        restart: unless-stopped
+        ports:
+            - "${ZOOKEEPER_PORT:-32181}:32181"
+        networks:
+            bridge:
+                aliases:
+                - zookeeper
 
-  kafka:
-    image: confluentinc/cp-kafka:7.6.1
-    container_name: FraudShield-kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "${KAFKA_PORT:-9092}:9092"
-      - "9093:9093"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: "${ZOOKEEPER_SERVER:-zookeeper:32181}"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: 1
-    volumes:
-      - kafka-data:/var/lib/kafka/data
-    networks:
-      bridge:
-        aliases:
-          - kafka
+    kafka:
+        image: confluentinc/cp-kafka:7.6.1
+        container_name: FraudShield-kafka
+        depends_on:
+            - zookeeper
+        ports:
+            - "${KAFKA_PORT:-9092}:9092"
+            - "9093:9093"
+        restart: unless-stopped
+        healthcheck:
+            test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 40s
+        environment:
+            KAFKA_BROKER_ID: 1
+            KAFKA_ZOOKEEPER_CONNECT: "${ZOOKEEPER_SERVER:-zookeeper:32181}"
+            KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+            KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+            KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+            KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+            KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+            KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+            KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+            KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+            KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+            KAFKA_NUM_PARTITIONS: 1
+        volumes:
+            - kafka-data:/var/lib/kafka/data
+        networks:
+            bridge:
+                aliases:
+                - kafka
 
-  # Debezium Kafka Connect
-  kafka-connect:
-    image: debezium/connect:2.5
-    hostname: kafka-connect
-    container_name: FraudShield-kafka-connect
-    depends_on:
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    ports:
-      - "8083:8083"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8083/connectors || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    environment:
-      BOOTSTRAP_SERVERS: kafka:9092
-      GROUP_ID: connect-cluster
-      CONFIG_STORAGE_TOPIC: connect-configs
-      OFFSET_STORAGE_TOPIC: connect-offsets
-      STATUS_STORAGE_TOPIC: connect-status
-      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
-      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      CONNECT_PLUGIN_PATH: /kafka/connect
-    networks:
-      bridge:
-        aliases:
-          - kafka-connect
+    # Debezium Kafka Connect
+    kafka-connect:
+        image: debezium/connect:2.5
+        hostname: kafka-connect
+        container_name: FraudShield-kafka-connect
+        depends_on:
+            kafka:
+                condition: service_healthy
+            postgres:
+                condition: service_healthy
+        ports:
+            - "8083:8083"
+        healthcheck:
+            test: ["CMD-SHELL", "curl -f http://localhost:8083/connectors || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        environment:
+            BOOTSTRAP_SERVERS: kafka:9092
+            GROUP_ID: connect-cluster
+            CONFIG_STORAGE_TOPIC: connect-configs
+            OFFSET_STORAGE_TOPIC: connect-offsets
+            STATUS_STORAGE_TOPIC: connect-status
+            KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+            VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+            KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+            VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+            CONNECT_PLUGIN_PATH: /kafka/connect
+        networks:
+            bridge:
+                aliases:
+                    - kafka-connect
 
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    hostname: kafka-ui
-    container_name: FraudShield-kafka-ui
-    depends_on:
-      kafka:
-        condition: service_healthy
-      kafka-connect:
-        condition: service_healthy
-    ports:
-      # - "8080:8080"
-      - "8085:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
-      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
-    networks:
-      bridge:
-        aliases:
-          - kafka-ui
+    kafka-ui:
+        image: provectuslabs/kafka-ui:latest
+        hostname: kafka-ui
+        container_name: FraudShield-kafka-ui
+        depends_on:
+            kafka:
+                condition: service_healthy
+            kafka-connect:
+                condition: service_healthy
+        ports:
+        # - "8080:8080"
+            - "8085:8080"
+        environment:
+            KAFKA_CLUSTERS_0_NAME: local
+            KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+            KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
+            KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+        networks:
+            bridge:
+                aliases:
+                    - kafka-ui
 
-  data-producer:
-    build:
-      context: ./data-producer
-    container_name: FraudShield-data-producer
-    environment:
-      KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
-      KAFKA_TOPIC_TRANSACTION: ${DATA_PRODUCER_TOPIC_TRANSACTION:-transactions_raw}
-      KAFKA_TOPIC_FRAUD_RULES: ${DATA_PRODUCER_TOPIC_FRAUD_RULES:-fraud_rules}
-      PRODUCER_INTERVAL_SECONDS: ${DATA_PRODUCER_INTERVAL_SECONDS:-1}
-      TOTAL_TRANSACTIONS: ${DATA_PRODUCER_TOTAL_TRANSACTIONS:-0}
-      EXISTING_CUSTOMER_PROBABILITY: ${DATA_PRODUCER_EXISTING_CUSTOMER_PROBABILITY:-0.95}
-      SUSPICIOUS_TRANSACTION_PROBABILITY: ${DATA_PRODUCER_SUSPICIOUS_TRANSACTION_PROBABILITY:-0.10}
-      LOG_LEVEL: ${DATA_PRODUCER_LOG_LEVEL:-INFO}
-      STATIC_DATA_FILE: /app/config/static-data.yml
-      FRAUD_RULES_FILE: /app/config/fraud-rules.json
-    depends_on:
-      kafka:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      bridge:
-        aliases:
-          - data-producer
+    data-producer:
+        build:
+            context: ./data-producer
+        container_name: FraudShield-data-producer
+        environment:
+            KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
+            POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+            POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+            POSTGRES_DB: ${POSTGRES_DB:-postgres}
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+            KAFKA_TOPIC_TRANSACTION: ${DATA_PRODUCER_TOPIC_TRANSACTION:-transactions_raw}
+            KAFKA_TOPIC_FRAUD_RULES: ${DATA_PRODUCER_TOPIC_FRAUD_RULES:-fraud_rules}
+            PRODUCER_INTERVAL_SECONDS: ${DATA_PRODUCER_INTERVAL_SECONDS:-1}
+            TOTAL_TRANSACTIONS: ${DATA_PRODUCER_TOTAL_TRANSACTIONS:-0}
+            EXISTING_CUSTOMER_PROBABILITY: ${DATA_PRODUCER_EXISTING_CUSTOMER_PROBABILITY:-0.95}
+            SUSPICIOUS_TRANSACTION_PROBABILITY: ${DATA_PRODUCER_SUSPICIOUS_TRANSACTION_PROBABILITY:-0.10}
+            LOG_LEVEL: ${DATA_PRODUCER_LOG_LEVEL:-INFO}
+            STATIC_DATA_FILE: /app/config/static-data.yml
+        depends_on:
+            kafka:
+                condition: service_healthy
+        restart: unless-stopped
+        networks:
+            bridge:
+                aliases:
+                    - data-producer
     
-  postgres:
-    build:
-      context: ./postgres
-    container_name: FraudShield-postgres
-    restart: always
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-postgres}
-    logging:
-        options:
-            max-size: 10m
-            max-file: "3"
-    ports:
-      - "${POSTGRES_WIN_PORT:-5438}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      bridge:
-        aliases:
-          - postgres
+    postgres:
+        build:
+            context: ./postgres
+        container_name: FraudShield-postgres
+        restart: always
+        environment:
+            - POSTGRES_USER=${POSTGRES_USER:-postgres}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+            - POSTGRES_DB=${POSTGRES_DB:-postgres}
+        logging:
+            options:
+                max-size: 10m
+                max-file: "3"
+        ports:
+            - "${POSTGRES_WIN_PORT:-5438}:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        volumes:
+            - postgres-data:/var/lib/postgresql/data
+        networks:
+            bridge:
+                aliases:
+                    - postgres
 
-  jobmanager:
-    build:
-      context: ./flink
-    container_name: FraudShield-jobmanager
-    hostname: jobmanager
-    command: jobmanager
-    ports:
-      - "${FLINK_PORT:-8081}:8081"
-    environment:
-      JOB_MANAGER_RPC_ADDRESS: ${JOB_MANAGER_RPC_ADDRESS:-jobmanager}
-      KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      # FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
-      # FLINK_JOB_NAME: ${FLINK_JOB_NAME:-FlinkWeatherJob}
-      CHECKPOINT_ENABLED: ${CHECKPOINT_ENABLED:-true}
-      CHECKPOINT_INTERVAL: ${CHECKPOINT_INTERVAL:-30000}
-      CHECKPOINT_TIMEOUT: ${CHECKPOINT_TIMEOUT:-60000}
-      CHECKPOINT_MIN_PAUSE: ${CHECKPOINT_MIN_PAUSE:-5000}
-      CHECKPOINT_MAX_CONCURRENT: ${CHECKPOINT_MAX_CONCURRENT:-1}
-      CHECKPOINT_PATH_ENRICHMENT: ${ENRICHMENT_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
-      CHECKPOINT_PATH_ENGINE: ${ENGINE_CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
+    postgres-sink:
+        build:
+            context: ./postgres-sink
+        container_name: FraudShield-postgres-sink
+        restart: unless-stopped
+        environment:
+            KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
+            KAFKA_CONSUMER_GROUP_SINK: ${KAFKA_CONSUMER_GROUP_SINK:-fraud-postgres-sink}
+            KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-earliest}
+            POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+            POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+            POSTGRES_DB: ${POSTGRES_DB:-postgres}
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+            LOG_LEVEL: ${POSTGRES_SINK_LOG_LEVEL:-INFO}
+            CATALOG_FILE: /app/config/catalog.yml
+        depends_on:
+            postgres:
+                condition: service_healthy
+            kafka:
+                condition: service_healthy
+        networks:
+            bridge:
+                aliases:
+                    - postgres-sink
 
-      KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-transactions_raw}
-      KAFKA_TOPIC_RULES: ${KAFKA_TOPIC_RULES:-fraud_rules}
-      KAFKA_TOPIC_ENRICHED: ${KAFKA_TOPIC_ENRICHED:-transactions_enriched}
-      KAFKA_TOPIC_DLQ: ${KAFKA_TOPIC_DLQ:-fraud_dlq}
-      KAFKA_TOPIC_RESULTS: ${KAFKA_TOPIC_RESULTS:-fraud_results}
-      KAFKA_CONSUMER_GROUP_ENRICHMENT: ${KAFKA_CONSUMER_GROUP_ENRICHMENT:-fraud-enrichment}
-      KAFKA_CONSUMER_GROUP_ENGINE: ${KAFKA_CONSUMER_GROUP_ENGINE:-fraud-engine}
-      WATERMARK_DELAY_SECONDS: ${WATERMARK_DELAY_SECONDS:-5}
-      HIGH_AMOUNT_THRESHOLD: ${ENRICHMENT_HIGH_AMOUNT_THRESHOLD:-100000000}
-    volumes:
-      - ./jobs:/opt/flink/jobs
-      - ./savepoints:/opt/flink/savepoints
-      - ./checkpoints:/opt/flink/checkpoints
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8081" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      bridge:
-        aliases:
-          - jobmanager
+    alerting:
+        build:
+            context: ./alerting
+        container_name: FraudShield-alerting
+        restart: unless-stopped
+        environment:
+            KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
+            KAFKA_ALERT_TOPIC: ${KAFKA_ALERT_TOPIC:-fraud_alerts}
+            KAFKA_ALERT_CONSUMER_GROUP: ${KAFKA_ALERT_CONSUMER_GROUP:-fraud-alert}
+            KAFKA_ALERT_AUTO_OFFSET_RESET: ${KAFKA_ALERT_AUTO_OFFSET_RESET:-latest}
+            KAFKA_ALERT_ENABLE_AUTO_COMMIT: ${KAFKA_ALERT_ENABLE_AUTO_COMMIT:-False}
+            TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+            TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+            TELEGRAM_TOPIC_ID: ${TELEGRAM_TOPIC_ID}
+            ALERT_SUMMARY_INTERVAL_SECONDS: ${ALERT_SUMMARY_INTERVAL_SECONDS}
+            ALERT_SUMMARY_MAX_RECENT_ALERTS: ${ALERT_SUMMARY_MAX_RECENT_ALERTS}
+        depends_on:
+            kafka:
+                condition: service_healthy
+        networks:
+            bridge:
+                aliases:
+                    - alerting
 
-  taskmanager:
-    build:
-      context: ./flink
-    command: taskmanager
-    depends_on:
-      jobmanager:
-        condition: service_healthy
-    environment:
-      JOB_MANAGER_RPC_ADDRESS: ${JOB_MANAGER_RPC_ADDRESS:-jobmanager}
-      TASK_MANAGER_NUMBER_OF_TASK_SLOTS: ${TASK_MANAGER_NUMBER_OF_TASK_SLOTS:-64}
-      KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
-      KAFKA_TOPIC: ${KAFKA_TOPIC:-weather}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
-      FLINK_JOB_NAME: ${FLINK_JOB_NAME:-FlinkWeatherJob}
-      CHECKPOINT_ENABLED: ${CHECKPOINT_ENABLED:-true}
-      CHECKPOINT_INTERVAL: ${CHECKPOINT_INTERVAL:-30000}
-      CHECKPOINT_TIMEOUT: ${CHECKPOINT_TIMEOUT:-60000}
-      CHECKPOINT_MIN_PAUSE: ${CHECKPOINT_MIN_PAUSE:-5000}
-      CHECKPOINT_MAX_CONCURRENT: ${CHECKPOINT_MAX_CONCURRENT:-1}
-      CHECKPOINT_PATH: ${CHECKPOINT_PATH:-file:///opt/flink/checkpoints}
-    networks:
-      bridge:
-        aliases:
-          - taskmanager
+    jobmanager:
+        build:
+            context: ./flink
+        container_name: FraudShield-jobmanager
+        hostname: jobmanager
+        command: jobmanager
+        ports:
+            - "${FLINK_PORT:-8081}:8081"
+        environment:
+            JOB_MANAGER_RPC_ADDRESS: ${JOB_MANAGER_RPC_ADDRESS:-jobmanager}
+            KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
+            POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+            POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+            POSTGRES_DB: ${POSTGRES_DB:-postgres}
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+            FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
+        volumes:
+            # - ./jobs:/opt/flink/jobs
+            # - ./flink/config:/opt/flink/config
+            - ./savepoints:/opt/flink/savepoints
+            - ./checkpoints:/opt/flink/checkpoints
+        healthcheck:
+            test: [ "CMD", "curl", "-f", "http://localhost:8081" ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        depends_on:
+            kafka:
+                condition: service_healthy
+        networks:
+            bridge:
+                aliases:
+                    - jobmanager
+
+    taskmanager:
+        build:
+            context: ./flink
+        command: taskmanager
+        depends_on:
+            jobmanager:
+                condition: service_healthy
+        environment:
+            JOB_MANAGER_RPC_ADDRESS: ${JOB_MANAGER_RPC_ADDRESS:-jobmanager}
+            TASK_MANAGER_NUMBER_OF_TASK_SLOTS: ${TASK_MANAGER_NUMBER_OF_TASK_SLOTS:-64}
+            KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092} 
+            KAFKA_TOPIC: ${KAFKA_TOPIC:-weather}
+            POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+            POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+            POSTGRES_DB: ${POSTGRES_DB:-postgres}
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+            FLINK_SINK_PARALLELISM: ${FLINK_SINK_PARALLELISM:-2}
+        networks:
+            bridge:
+                aliases:
+                    - taskmanager
     
 
 volumes:
-  kafka-data:
-  postgres-data:
-  # flink-checkpoints:
-  # flink-savepoints:
+    kafka-data:
+    postgres-data:
+    # flink-checkpoints:
+    # flink-savepoints:

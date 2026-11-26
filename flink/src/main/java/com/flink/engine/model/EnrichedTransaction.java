@@ -4,8 +4,12 @@ import java.io.Serializable;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+// Use snake_case when this object is serialized to or deserialized from JSON.
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+
+// Define the data model for a transaction after enrichment.
 public class EnrichedTransaction implements Serializable {
+    // Define the fields to store the transaction information.
     public String transactionId;
     public String customerId;
     public String accountId;
@@ -36,5 +40,6 @@ public class EnrichedTransaction implements Serializable {
     public String timestamp;
     public String processingTime;
 
+    // Provide an empty constructor for object creation and serialization.
     public EnrichedTransaction() {}
 }

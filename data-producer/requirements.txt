@@ -3,3 +3,4 @@ aiokafka==0.7.2
 kafka-python==2.2.15
 Faker==37.5.3
 PyYAML==6.0.2
+psycopg2-binary==2.9.9

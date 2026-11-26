@@ -101,20 +101,24 @@ Target utama project ini adalah menunjukkan bagaimana sebuah sistem streaming da
                 │ • Dynamic Rules              │
                 │ • Fraud Score                │
                 │                              │
-                └─────────────────┬────────────┘
-                                  │
-                    ┌─────────────┴──────────────┐
-                    │                            │
-                    ▼                            ▼
-        transactions.analyzed               fraud_alerts
-                    │                            │
-                    │                            │
-            CG: fraud-sink              CG: fraud-alert
-                    │                            │
-                    ▼                            ▼
-                PostgreSQL                  Alert Service
-                                                │
-                                        Telegram / Email
+                └───────────────┬──────────────┘
+                                │
+                    ┌───────────┴────────────┐
+                    │                        │
+                    ▼                        ▼
+              fraud_results            fraud_alerts
+                    │                        │
+                    │                  ┌─────┴──────────┐
+                    │                  │                │
+                    ▼                  ▼                ▼
+                PostgreSQL      Alert Service       PostgreSQL
+            CG: fraud-sink     CG: fraud-alert    CG:fraud-alert-sink
+                                       │
+                                       ▼
+                                Telegram Bot API
+                                       │
+                                       ▼
+                                 Telegram Group
 ```
 
 Kemudian ada jalur khusus untuk dynamic fraud rules:
@@ -550,7 +554,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
  transactions_enriched          fraud_dlq
               │
               ▼
-                  FLINK JOB #2
+        FLINK JOB #2
               │
         ┌─────┴─────────────┐
         │                   │
@@ -940,14 +944,14 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
     ```
 
 
-## Alert Service
+## Alerting
 - Consumer: `fraud-alert`
 - membaca: `fraud_alerts`
 - kemudian:
     ```
     Kafka
     ↓
-    Alert Service
+    Alerting
     ↓
     Telegram
 
@@ -955,7 +959,7 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
 
     Kafka
     ↓
-    Alert Service
+    Alerting
     ↓
     Email
     ```
@@ -973,13 +977,13 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
     ```
     
 
-## Full End-to-End Flow FruadShield
+## Full End-to-End Flow FraudShield
 ```
                     TRANSACTION
                         │
                         ▼
               ┌──────────────────┐
-              │ Python Generator  │
+              │ Python Generator │
               └────────┬─────────┘
                        │
                        ▼
@@ -1020,19 +1024,23 @@ Kemudian ada jalur khusus untuk dynamic fraud rules:
         │ • Dynamic Rules              │
         │ • CEP                        │
         │ • Fraud Scoring              │
-        └──────────────┬───────────────┘
-                       │
-              ┌────────┴────────┐
-              │                 │
-              ▼                 ▼
-       fraud_results       fraud_alerts
-              │                 │
-       CG: fraud-sink     CG: fraud-alert
-              │                 │
-              ▼                 ▼
-         PostgreSQL        Alert Service
-              │                 │
-              ▼                 ▼
-           Grafana        Telegram/Email
+        └───────────────┬──────────────┘
+                        │
+            ┌───────────┴────────────┐
+            │                        │
+            ▼                        ▼
+        fraud_results            fraud_alerts
+            │                          │
+            │                    ┌─────┴────────┐
+            │                    │              │
+            ▼                    ▼              ▼
+        PostgreSQL          Alert Service  PostgreSQL
+        fraud-sink          fraud-alert    fraud-alert-sink
+            │                    │
+            │                    ▼
+            ▼            Telegram Bot API
+        Grafana                  │
+                                 ▼
+                            Telegram Group
 ```
 

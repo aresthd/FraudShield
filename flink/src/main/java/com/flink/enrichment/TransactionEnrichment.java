@@ -2,6 +2,7 @@
 
 package com.flink.enrichment;
 
+import com.flink.common.Parameters;
 import com.flink.enrichment.utils.*;
 import com.flink.enrichment.model.*;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -19,115 +20,163 @@ import java.time.Duration;
 
 public class TransactionEnrichment {
 
-    private static final String KAFKA_SERVER = env("KAFKA_SERVER", "kafka:9092");
-    private static final String INPUT_TOPIC = env("KAFKA_TOPIC_RAW", "transactions_raw");
-    private static final String OUTPUT_TOPIC = env("KAFKA_TOPIC_ENRICHED", "transactions_enriched");
-    private static final String DLQ_TOPIC = env("KAFKA_TOPIC_DLQ", "fraud_dlq");
-    private static final String CONSUMER_GROUP = env("KAFKA_CONSUMER_GROUP_ENRICHMENT", "fraud-enrichment");
-    private static final long WATERMARK_DELAY_SECONDS = Long.parseLong(env("WATERMARK_DELAY_SECONDS", "5"));
+	public static void main(String[] args) throws Exception {
+		// Validate that the configuration file path is provided as a command-line argument.
+		if (args.length < 1) {
+			throw new IllegalArgumentException("Usage: TransactionEnrichment <config-file> [job-name]");
+		}
 
-    public static void main(String[] args) throws Exception {
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+		// Get & Load the configuration file path from the first command-line argument.
+		String paramsPath = args[0];
+		Parameters params = Parameters.load(paramsPath);
 
-        configureCheckpoint(env);
+		// Get the Flink job name from the second argument or use the default job name.
+		String jobName = args.length >= 2 ? args[1] : "TransactionEnrichment";
 
-        KafkaSource<String> source = KafkaSource.<String>builder()
-                .setBootstrapServers(KAFKA_SERVER)
-                .setTopics(INPUT_TOPIC)
-                .setGroupId(CONSUMER_GROUP)
-                .setStartingOffsets(OffsetsInitializer.earliest())
-                .setValueOnlyDeserializer(new SimpleStringSchema())
-                .build();
+		// Get the Kafka configuration
+		String kafkaServer = params.getEnv("KAFKA_SERVER", "kafka:9092");
+		String inputTopic = params.get("kafka.input.topic");
+		String outputTopic = params.get("kafka.output.topic");
+		String dlqTopic = params.get("kafka.dlq.topic");
+		String consumerGroup = params.get("kafka.consumer.group");
 
-        DataStream<String> rawStream = env.fromSource(
-                source,
-                WatermarkStrategy.noWatermarks(),
-                "Kafka Source - transactions_raw"
-        );
+		// Get the allowed event-time out-of-order delay used for watermark generation.
+		long watermarkDelay = params.getLong("watermark.delay.seconds");
 
-        DataStream<RawTransaction> parsedStream = rawStream
-                .map(TransactionParser::parse)
-                .name("Parse Transaction");
+		// Create the Flink execution environment used to build and execute the streaming pipeline.
+		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        DataStream<RawTransaction> validStream = parsedStream
-                .filter(transaction -> transaction.valid)
-                .name("Validate Transaction");
+		// Configure Flink checkpointing based on the application configuration.
+		configureCheckpoint(env, params);
 
-        DataStream<String> invalidStream = parsedStream
-                .filter(transaction -> !transaction.valid)
-                .map(DlqUtils::createDlqMessage)
-                .name("Create DLQ");
+		// Build a Kafka source that reads raw transaction messages from the configured Kafka topic.
+		KafkaSource<String> source = KafkaSource.<String>builder()
+			.setBootstrapServers(kafkaServer)
+			.setTopics(inputTopic)
+			.setGroupId(consumerGroup)
+			.setStartingOffsets(OffsetsInitializer.earliest())
+			.setValueOnlyDeserializer(new SimpleStringSchema())
+			.build();
 
-        DataStream<RawTransaction> eventTimeStream = validStream
-                .assignTimestampsAndWatermarks(
-                        WatermarkStrategy
-                                .<RawTransaction>forBoundedOutOfOrderness(
-                                        Duration.ofSeconds(WATERMARK_DELAY_SECONDS)
-                                )
-                                .withTimestampAssigner(
-                                        (transaction, timestamp) -> transaction.eventTimestamp
-                                )
-                )
-                .name("Event Time & Watermark");
+		// Create a Flink DataStream from the Kafka source without generating watermarks at this stage.
+		DataStream<String> rawStream = env.fromSource(
+			source, WatermarkStrategy.noWatermarks(),
+			"Kafka Source - transactions_raw"
+		);
 
-        DataStream<String> enrichedStream = eventTimeStream
-                .keyBy(transaction -> transaction.customerId)
-                .process(new EnrichmentProcessFunction())
-                .name("Customer Enrichment");
+		// Parse raw JSON/string messages into RawTransaction objects.
+		DataStream<RawTransaction> parsedStream = rawStream
+			.map(TransactionParser::parse)
+			.name("Parse Transaction");
 
-        enrichedStream
-                .sinkTo(createKafkaSink(OUTPUT_TOPIC))
-                .name("Kafka Sink - transactions_enriched");
+		// Keep only transactions that successfully passed the validation process.
+		DataStream<RawTransaction> validStream = parsedStream
+			.filter(transaction -> transaction.valid)
+			.name("Validate Transaction");
 
-        invalidStream
-                .sinkTo(createKafkaSink(DLQ_TOPIC))
-                .name("Kafka Sink - fraud_dlq");
+		// Keep invalid transactions and convert them into messages for the dead-letter queue.
+		DataStream<String> invalidStream = parsedStream
+			.filter(transaction -> !transaction.valid)
+			.map(DlqUtils::createDlqMessage)
+			.name("Create DLQ");
 
-        env.execute("TransactionEnrichment");
-    }
+		// Assign event timestamps and generate watermarks to handle out-of-order transactions.
+		DataStream<RawTransaction> eventTimeStream = validStream
+			.assignTimestampsAndWatermarks(
+				WatermarkStrategy.<RawTransaction>forBoundedOutOfOrderness(Duration.ofSeconds(watermarkDelay))
+				.withTimestampAssigner((transaction, timestamp) -> transaction.eventTimestamp)
+			)
+			.name("Event Time & Watermark");
 
-    private static KafkaSink<String> createKafkaSink(String topic) {
-        return KafkaSink.<String>builder()
-                .setBootstrapServers(KAFKA_SERVER)
-                .setRecordSerializer(
-                        KafkaRecordSerializationSchema.builder()
-                                .setTopic(topic)
-                                .setValueSerializationSchema(new SimpleStringSchema())
-                                .build()
-                )
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-                .build();
-    }
+		// Group transactions by customer so that enrichment state can be maintained per customer.
+		DataStream<String> enrichedStream = eventTimeStream
+			.keyBy(transaction -> transaction.customerId)
+			.process(new EnrichmentProcessFunction())
+			.name("Customer Enrichment");
 
-    private static void configureCheckpoint(StreamExecutionEnvironment env) {
-        boolean enabled = Boolean.parseBoolean(env("CHECKPOINT_ENABLED", "true"));
-        if (!enabled) return;
+		// Send successfully enriched transactions to the configured Kafka output topic.
+		enrichedStream.sinkTo(createKafkaSink(kafkaServer, outputTopic))
+			.name("Kafka Sink - transactions_enriched");
 
-        long interval = Long.parseLong(env("CHECKPOINT_INTERVAL", "30000"));
-        long timeout = Long.parseLong(env("CHECKPOINT_TIMEOUT", "60000"));
-        long minPause = Long.parseLong(env("CHECKPOINT_MIN_PAUSE", "5000"));
-        int maxConcurrent = Integer.parseInt(env("CHECKPOINT_MAX_CONCURRENT", "1"));
+		// Send invalid transactions to the configured DLQ Kafka topic.
+		invalidStream.sinkTo(createKafkaSink(kafkaServer, dlqTopic))
+			.name("Kafka Sink - fraud_dlq");
 
+		// Submit and execute the complete Flink streaming job.
+		env.execute(jobName);
+	}
+
+	
+	// Create a Kafka sink that publishes string messages to the specified Kafka topic.
+	private static KafkaSink<String> createKafkaSink(String kafkaServer, String topic) {
+		// Build and configure the Kafka sink.
+		return KafkaSink.<String>builder()
+			// Configure the Kafka broker address used by the sink.
+			.setBootstrapServers(kafkaServer)
+
+			// Configure how records are serialized and which topic receives them.
+			.setRecordSerializer(
+				KafkaRecordSerializationSchema.builder()
+				.setTopic(topic)
+				.setValueSerializationSchema(new SimpleStringSchema())
+				.build()
+			)
+
+			// Guarantee that each record is delivered at least once.
+			.setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+
+			// Build the Kafka sink.
+			.build();
+	}
+
+	// Configure Flink checkpointing using values from the application configuration.
+	private static void configureCheckpoint(StreamExecutionEnvironment env, Parameters params) {
+		// Read whether checkpointing is enabled from the configuration.
+		boolean enabled = params.getBoolean("checkpoint.enabled");
+
+		// Stop checkpoint configuration when checkpointing is disabled.
+		if (!enabled) return;
+
+		// Get checkpoint configurations
+		long interval = params.getLong("checkpoint.interval.ms");
+		long timeout = params.getLong("checkpoint.timeout.ms");
+		long minPause = params.getLong("checkpoint.min.pause.ms");
+		int maxConcurrent = params.getInt("checkpoint.max.concurrent");
+	
+		// Enable checkpointing with the configured interval.
         env.enableCheckpointing(interval);
+
+        // Configure the maximum time allowed for each checkpoint.
         env.getCheckpointConfig().setCheckpointTimeout(timeout);
+
+        // Configure the minimum pause between checkpoint executions.
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(minPause);
+
+        // Configure the maximum number of concurrent checkpoints.
         env.getCheckpointConfig().setMaxConcurrentCheckpoints(maxConcurrent);
-        // env.getCheckpointConfig().setCheckpointStorage(
-        //         env("CHECKPOINT_PATH", "file:///opt/flink/checkpoints")
-        // );
+		
+		// env.getCheckpointConfig().setCheckpointStorage(
+		//         env("CHECKPOINT_PATH", "file:///opt/flink/checkpoints")
+		// );
 
-        // env.getCheckpointConfig().set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
-        // env.getCheckpointConfig().set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH", "file:///opt/flink/checkpoints"));
+		// env.getCheckpointConfig().set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+		// env.getCheckpointConfig().set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH", "file:///opt/flink/checkpoints"));
 
-        Configuration config = new Configuration();
-        config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
-        config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
-        env.configure(config);
-    }
+		// Configuration config = new Configuration();
+		// config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+		// config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, env("CHECKPOINT_PATH_ENRICHMENT", "file:///opt/flink/checkpoints"));
+		// env.configure(config);
 
+		// Configure the checkpoint storage type and location.
+        Configuration parameters = new Configuration();
 
-    private static String env(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? defaultValue : value;
-    }
+        // Store checkpoint state using the filesystem backend.
+        parameters.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+
+        // Set the checkpoint directory from the application configuration.
+        parameters.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, params.get("checkpoint.path"));
+
+        // Apply the checkpoint storage configuration to the Flink environment.
+        env.configure(parameters);
+	}
 }

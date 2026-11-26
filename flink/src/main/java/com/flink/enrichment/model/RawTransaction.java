@@ -1,6 +1,7 @@
 package com.flink.enrichment.model;
 
 public class RawTransaction {
+    // Define the fields to store the transaction information.
     public String transactionId;
     public String customerId;
     public String accountId;
