@@ -8,6 +8,7 @@ FraudShield is a real-time banking fraud detection platform built to demonstrate
 The platform uses **Apache Kafka** as the event streaming backbone and **Apache Flink** as the real-time processing engine. Transactions are continuously generated, enriched, analyzed using stateful fraud detection rules, persisted into PostgreSQL, and suspicious activities are delivered as alerts through Telegram.
 
 The main objective is to demonstrate how a streaming data platform can:
+
 1. Generate synthetic banking transactions.
 2. Stream transactions through Apache Kafka.
 3. Validate and enrich transactions using Apache Flink.
